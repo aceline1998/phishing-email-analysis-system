@@ -1,0 +1,15 @@
+[Unit]
+Description=Phishing Email Intelligent Analysis System
+After=network.target mysql.service mariadb.service redis.service redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/phishing-email-analysis-system
+ExecStart=/opt/phishing-email-analysis-system/venv/bin/python main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+[Install]
+WantedBy=multi-user.target

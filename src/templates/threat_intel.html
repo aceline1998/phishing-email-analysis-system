@@ -1,0 +1,951 @@
+{% extends "base.html" %}
+{% block title %}威胁情报 - 钓鱼邮件智能分析系统{% endblock %}
+{% block extra_css %}
+<style>
+    .query-section {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+    .query-section .form-group {
+        margin-bottom: 0;
+        flex: 1;
+        min-width: 120px;
+    }
+    .query-section .btn {
+        flex-shrink: 0;
+        margin-bottom: 0;
+    }
+    .result-card {
+        padding: 20px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.03);
+        margin-bottom: 16px;
+    }
+    .result-card.malicious {
+        border-left: 3px solid #ff6b6b;
+        background: rgba(255, 107, 107, 0.08);
+    }
+    .result-card.safe {
+        border-left: 3px solid #00ff88;
+        background: rgba(0, 255, 136, 0.05);
+    }
+    .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .result-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .result-badge {
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .result-badge.malicious {
+        background: rgba(255,107,107,0.2);
+        color: #ff6b6b;
+    }
+    .result-badge.safe {
+        background: rgba(0,255,136,0.2);
+        color: #00ff88;
+    }
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-top: 12px;
+    }
+    .detail-item {
+        display: flex;
+        gap: 8px;
+        font-size: 13px;
+    }
+    .detail-label {
+        color: var(--text-muted);
+        flex-shrink: 0;
+        min-width: 80px;
+    }
+    .detail-value {
+        color: var(--text-primary);
+        word-break: break-all;
+    }
+    .config-tabs {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .config-tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        color: var(--text-secondary);
+        border-bottom: 2px solid transparent;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+    .config-tab.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+    }
+    .config-tab:hover {
+        color: var(--primary);
+    }
+    .config-panel {
+        display: none;
+    }
+    .config-panel.active {
+        display: block;
+    }
+    .provider-tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        background: rgba(0,212,255,0.15);
+        color: var(--primary);
+    }
+    .raw-data-box {
+        background: rgba(0,0,0,0.3);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 12px;
+        max-height: 200px;
+        overflow: auto;
+        font-family: monospace;
+        font-size: 12px;
+        color: var(--text-secondary);
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .ai-analysis-content {
+        background: linear-gradient(135deg, rgba(0,212,255,0.08), rgba(0,100,200,0.05));
+        border: 1px solid rgba(0,212,255,0.3);
+        border-radius: 8px;
+        padding: 16px;
+        font-size: 14px;
+        line-height: 1.8;
+        color: var(--text-primary);
+    }
+    .loading-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        color: var(--text-muted);
+    }
+    .loading-spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid var(--border-color);
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 10px;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: 0.6; }
+        50% { transform: scale(1.5); opacity: 0; }
+        100% { transform: scale(1); opacity: 0.6; }
+    }
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 20px;
+    }
+    .pagination button {
+        padding: 6px 12px;
+        border: 1px solid var(--border-color);
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .pagination button:hover:not(:disabled) {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+    .pagination button.active {
+        background: var(--primary);
+        color: #000;
+        border-color: var(--primary);
+    }
+    .pagination button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="config-tabs">
+    <div class="config-tab active" onclick="switchTab('query')">情报查询</div>
+    <div class="config-tab" onclick="switchTab('records')">查询记录</div>
+    <div class="config-tab admin-only" onclick="switchTab('config')" style="display:none;">情报源配置</div>
+</div>
+
+<div class="config-panel active" id="panel-query">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">威胁情报查询</span>
+        </div>
+        <div class="query-section">
+            <div class="form-group">
+                <label class="form-label">查询类型</label>
+                <select class="form-select" id="query-type">
+                    <option value="ip">IP地址</option>
+                    <option value="domain">域名</option>
+                    <option value="url">URL链接</option>
+                    <option value="file">文件哈希 (MD5/SHA256)</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex: 2;">
+                <label class="form-label">查询内容</label>
+                <input type="text" class="form-input" id="query-value" placeholder="请输入要查询的内容">
+            </div>
+            <div class="form-group admin-only" style="display:none;">
+                <label class="form-label">情报源</label>
+                <select class="form-select" id="query-provider">
+                    <option value="">默认情报源</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" onclick="doQuery()">查询</button>
+        </div>
+    </div>
+
+    <div id="query-result"></div>
+    
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+            <span class="card-title">威胁情报概览</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;padding:20px;">
+            <div>
+                <h4 style="font-size:14px;color:#00d4ff;margin-bottom:12px;">🌍 威胁来源分布</h4>
+                <div id="threat-map" style="height:300px;background:linear-gradient(135deg,#0a0a1a 0%,#1a1a3e 50%,#0d0d2b 100%);border-radius:12px;border:1px solid rgba(0,212,255,0.2);overflow:hidden;position:relative;">
+                    <div style="position:absolute;top:0;left:0;width:100%;height:100%;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:30px 30px;"></div>
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;border:1px dashed rgba(0,212,255,0.1);border-radius:50%;"></div>
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px;border:1px dashed rgba(0,212,255,0.05);border-radius:50%;"></div>
+                    
+                    <svg viewBox="0 0 400 300" style="width:100%;height:100%;position:relative;z-index:1;">
+                        <defs>
+                            <filter id="glow">
+                                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                            </filter>
+                            <radialGradient id="redGlow" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#ff6b6b" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="#ff6b6b" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="orangeGlow" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#ff9800" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="#ff9800" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="greenGlow" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#00ff88" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="#00ff88" stop-opacity="0"/>
+                            </radialGradient>
+                        </defs>
+                        
+                        <line x1="200" y1="100" x2="100" y2="150" stroke="rgba(255,107,107,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+                        <line x1="200" y1="100" x2="300" y2="120" stroke="rgba(255,152,0,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+                        <line x1="200" y1="100" x2="150" y2="220" stroke="rgba(0,255,136,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+                        <line x1="200" y1="100" x2="320" y2="200" stroke="rgba(255,107,107,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+                        <line x1="200" y1="100" x2="70" y2="80" stroke="rgba(255,152,0,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+                        <line x1="100" y1="150" x2="60" y2="180" stroke="rgba(255,107,107,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+                        <line x1="300" y1="120" x2="350" y2="150" stroke="rgba(255,152,0,0.2)" stroke-width="1" stroke-dasharray="3,3"/>
+                        
+                        <circle cx="200" cy="100" r="25" fill="url(#redGlow)" opacity="0.6" class="pulse-ring" style="animation:pulse 2s infinite;"/>
+                        <circle cx="200" cy="100" r="10" fill="#ff6b6b" filter="url(#glow)"/>
+                        <text x="200" y="135" text-anchor="middle" fill="#ff6b6b" font-size="11" font-weight="600">核心威胁</text>
+                        
+                        <circle cx="100" cy="150" r="18" fill="url(#redGlow)" opacity="0.4" class="pulse-ring" style="animation:pulse 2.5s infinite;animation-delay:0.5s;"/>
+                        <circle cx="100" cy="150" r="7" fill="#ff6b6b" filter="url(#glow)"/>
+                        <text x="100" y="178" text-anchor="middle" fill="#ff6b6b" font-size="10">高风险区</text>
+                        
+                        <circle cx="300" cy="120" r="15" fill="url(#orangeGlow)" opacity="0.4" class="pulse-ring" style="animation:pulse 3s infinite;animation-delay:1s;"/>
+                        <circle cx="300" cy="120" r="6" fill="#ff9800" filter="url(#glow)"/>
+                        <text x="300" y="148" text-anchor="middle" fill="#ff9800" font-size="10">可疑区</text>
+                        
+                        <circle cx="150" cy="220" r="12" fill="url(#greenGlow)" opacity="0.4" class="pulse-ring" style="animation:pulse 3.5s infinite;animation-delay:1.5s;"/>
+                        <circle cx="150" cy="220" r="5" fill="#00ff88" filter="url(#glow)"/>
+                        <text x="150" y="245" text-anchor="middle" fill="#00ff88" font-size="10">安全区</text>
+                        
+                        <circle cx="320" cy="200" r="16" fill="url(#redGlow)" opacity="0.4" class="pulse-ring" style="animation:pulse 2.8s infinite;animation-delay:0.8s;"/>
+                        <circle cx="320" cy="200" r="6" fill="#ff6b6b" filter="url(#glow)"/>
+                        <text x="320" y="228" text-anchor="middle" fill="#ff6b6b" font-size="10">高风险区</text>
+                        
+                        <circle cx="70" cy="80" r="10" fill="url(#orangeGlow)" opacity="0.3" class="pulse-ring" style="animation:pulse 4s infinite;animation-delay:2s;"/>
+                        <circle cx="70" cy="80" r="4" fill="#ff9800" filter="url(#glow)"/>
+                        <text x="70" y="105" text-anchor="middle" fill="#ff9800" font-size="10">可疑区</text>
+                        
+                        <circle cx="60" cy="180" r="8" fill="url(#redGlow)" opacity="0.3" class="pulse-ring" style="animation:pulse 3.2s infinite;animation-delay:1.2s;"/>
+                        <circle cx="60" cy="180" r="3" fill="#ff6b6b" filter="url(#glow)"/>
+                        
+                        <circle cx="350" cy="150" r="9" fill="url(#orangeGlow)" opacity="0.3" class="pulse-ring" style="animation:pulse 3.8s infinite;animation-delay:1.8s;"/>
+                        <circle cx="350" cy="150" r="4" fill="#ff9800" filter="url(#glow)"/>
+                        
+                        <circle cx="180" cy="180" r="6" fill="url(#greenGlow)" opacity="0.3" class="pulse-ring" style="animation:pulse 4.2s infinite;animation-delay:2.2s;"/>
+                        <circle cx="180" cy="180" r="3" fill="#00ff88" filter="url(#glow)"/>
+                        
+                        <circle cx="250" cy="200" r="7" fill="url(#greenGlow)" opacity="0.3" class="pulse-ring" style="animation:pulse 4.5s infinite;animation-delay:2.5s;"/>
+                        <circle cx="250" cy="200" r="3" fill="#00ff88" filter="url(#glow)"/>
+                    </svg>
+                    
+                    <div style="position:absolute;bottom:10px;left:10px;right:10px;display:flex;justify-content:center;gap:24px;font-size:12px;z-index:2;">
+                        <span style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(0,0,0,0.6);border-radius:20px;"><div style="width:8px;height:8px;border-radius:50%;background:#ff6b6b;box-shadow:0 0 10px #ff6b6b;"></div> <span style="color:#ff6b6b;">恶意</span></span>
+                        <span style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(0,0,0,0.6);border-radius:20px;"><div style="width:8px;height:8px;border-radius:50%;background:#ff9800;box-shadow:0 0 10px #ff9800;"></div> <span style="color:#ff9800;">可疑</span></span>
+                        <span style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(0,0,0,0.6);border-radius:20px;"><div style="width:8px;height:8px;border-radius:50%;background:#00ff88;box-shadow:0 0 10px #00ff88;"></div> <span style="color:#00ff88;">安全</span></span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <h4 style="font-size:14px;color:#00d4ff;margin-bottom:12px;">📊 威胁统计</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div style="background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:#ff6b6b;" id="stat-malicious">0</div>
+                        <div style="font-size:12px;color:#888;margin-top:4px;">恶意记录</div>
+                    </div>
+                    <div style="background:rgba(255,152,0,0.1);border:1px solid rgba(255,152,0,0.3);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:#ff9800;" id="stat-safe">0</div>
+                        <div style="font-size:12px;color:#888;margin-top:4px;">安全记录</div>
+                    </div>
+                    <div style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:#00d4ff;" id="stat-total">0</div>
+                        <div style="font-size:12px;color:#888;margin-top:4px;">查询总数</div>
+                    </div>
+                    <div style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:8px;padding:12px;text-align:center;">
+                        <div style="font-size:24px;font-weight:bold;color:#00ff88;" id="stat-today">0</div>
+                        <div style="font-size:12px;color:#888;margin-top:4px;">今日查询</div>
+                    </div>
+                </div>
+                <h4 style="font-size:14px;color:#00d4ff;margin-top:16px;margin-bottom:12px;">🔥 最近威胁</h4>
+                <div id="recent-threats-list" style="max-height:160px;overflow-y:auto;">
+                    <div style="text-align:center;color:#888;padding:20px;font-size:13px;">暂无威胁记录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="config-panel" id="panel-records">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">查询记录</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select class="form-select" style="width:120px;" id="record-type-filter" onchange="loadRecords(1)">
+                    <option value="">全部类型</option>
+                    <option value="ip">IP地址</option>
+                    <option value="domain">域名</option>
+                    <option value="url">URL链接</option>
+                    <option value="file">文件哈希</option>
+                </select>
+                <select class="form-select" style="width:120px;" id="record-malicious-filter" onchange="loadRecords(1)">
+                    <option value="">全部结果</option>
+                    <option value="true">恶意</option>
+                    <option value="false">安全</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="showExportIntelOptions()">📊 导出</button>
+            </div>
+        </div>
+        <div id="export-intel-options" style="display:none;gap:10px;align-items:center;margin-bottom:15px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+            <span style="color:var(--text-muted);font-size:13px;">导出范围:</span>
+            <input type="date" id="intel-export-start" class="form-input" style="width:140px;padding:6px 10px;font-size:13px;">
+            <span style="color:var(--text-muted);">至</span>
+            <input type="date" id="intel-export-end" class="form-input" style="width:140px;padding:6px 10px;font-size:13px;">
+            <select id="intel-export-limit" class="form-select" style="width:110px;padding:6px 10px;font-size:13px;">
+                <option value="">全部记录</option>
+                <option value="10">近10条</option>
+                <option value="50">近50条</option>
+                <option value="100">近100条</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="doExportIntel()">确认导出</button>
+            <button class="btn btn-secondary btn-sm" onclick="hideExportIntelOptions()">取消</button>
+        </div>
+        <table class="table">
+            <thead>
+                <tr><th>类型</th><th>查询内容</th><th>情报源</th><th>结果</th><th>威胁类型</th><th>置信度</th><th>查询时间</th></tr>
+            </thead>
+            <tbody id="records-tbody"></tbody>
+        </table>
+        <div class="pagination" id="records-pagination"></div>
+    </div>
+</div>
+
+<div class="config-panel admin-only" id="panel-config" style="display:none;">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">情报源配置</span>
+            <button class="btn btn-primary btn-sm" onclick="showConfigModal()">新增情报源</button>
+        </div>
+        <table class="table">
+            <thead>
+                <tr><th>名称</th><th>情报源类型</th><th>API地址</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+            </thead>
+            <tbody id="config-tbody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay" id="config-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="config-modal-title">新增情报源</span>
+            <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="config-id">
+            <div class="form-group">
+                <label class="form-label">配置名称</label>
+                <input type="text" class="form-input" id="config-name" placeholder="如：微步在线API">
+            </div>
+            <div class="form-group">
+                <label class="form-label">情报源类型</label>
+                <select class="form-select" id="config-provider">
+                    <option value="threatbook">微步在线 (ThreatBook)</option>
+                    <option value="virustotal">VirusTotal</option>
+                    <option value="abuseipdb">AbuseIPDB</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">API Key</label>
+                <input type="password" class="form-input" id="config-api-key" placeholder="请输入API Key">
+            </div>
+            <div class="form-group">
+                <label class="form-label">API地址 (选填，使用默认可留空)</label>
+                <input type="text" class="form-input" id="config-api-url" placeholder="自定义API基础地址">
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="config-active" checked style="margin-right:6px;vertical-align:middle;">
+                    启用该配置
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeConfigModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let configs = [];
+
+function switchTab(tab) {
+    document.querySelectorAll('.config-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.config-panel').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('panel-' + tab).classList.add('active');
+    if (tab === 'records') loadRecords(1);
+    if (tab === 'config') loadConfigs();
+}
+
+function showConfigModal(id) {
+    document.getElementById('config-modal').classList.add('active');
+    if (id) {
+        const cfg = configs.find(c => c.id === id);
+        if (cfg) {
+            document.getElementById('config-modal-title').textContent = '编辑情报源';
+            document.getElementById('config-id').value = cfg.id;
+            document.getElementById('config-name').value = cfg.name;
+            document.getElementById('config-provider').value = cfg.provider;
+            document.getElementById('config-api-key').value = '';
+            document.getElementById('config-api-key').placeholder = '如无需修改请留空，已保存的密钥不会显示';
+            document.getElementById('config-api-url').value = cfg.api_base_url || '';
+            document.getElementById('config-active').checked = cfg.is_active;
+        }
+    } else {
+        document.getElementById('config-modal-title').textContent = '新增情报源';
+        document.getElementById('config-id').value = '';
+        document.getElementById('config-name').value = '';
+        document.getElementById('config-provider').value = 'threatbook';
+        document.getElementById('config-api-key').value = '';
+        document.getElementById('config-api-key').placeholder = '请输入API Key';
+        document.getElementById('config-api-url').value = '';
+        document.getElementById('config-active').checked = true;
+    }
+}
+
+function closeConfigModal() {
+    document.getElementById('config-modal').classList.remove('active');
+}
+
+async function loadConfigs() {
+    try {
+        configs = await apiRequest('/api/threat-intel/configs');
+        const tbody = document.getElementById('config-tbody');
+        const providerSelect = document.getElementById('query-provider');
+        
+        if (configs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:30px;">暂无配置</td></tr>';
+            providerSelect.innerHTML = '<option value="">默认情报源</option>';
+            return;
+        }
+        
+        tbody.innerHTML = configs.map(c => {
+            const providerNames = { threatbook: '微步在线', virustotal: 'VirusTotal', abuseipdb: 'AbuseIPDB' };
+            return `<tr>
+                <td>${c.name}</td>
+                <td><span class="provider-tag">${providerNames[c.provider] || c.provider}</span></td>
+                <td style="font-size:12px;color:var(--text-muted);">${c.api_base_url || '默认地址'}</td>
+                <td>${c.is_active ? '<span class="badge badge-normal">已启用</span>' : '<span class="badge badge-pending">已禁用</span>'}</td>
+                <td style="font-size:12px;">${c.created_at}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="showConfigModal(${c.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteConfig(${c.id})">删除</button>
+                </td>
+            </tr>`;
+        }).join('');
+        
+        providerSelect.innerHTML = '<option value="">默认情报源</option>' +
+            configs.map(c => {
+                const providerNames = { threatbook: '微步在线', virustotal: 'VirusTotal', abuseipdb: 'AbuseIPDB' };
+                return `<option value="${c.id}">${c.name} (${providerNames[c.provider] || c.provider})</option>`;
+            }).join('');
+    } catch (e) {
+        showAlert('加载配置失败: ' + e.message, 'error');
+    }
+}
+
+async function saveConfig() {
+    const id = document.getElementById('config-id').value;
+    const name = document.getElementById('config-name').value;
+    const provider = document.getElementById('config-provider').value;
+    const apiKey = document.getElementById('config-api-key').value;
+    const apiUrl = document.getElementById('config-api-url').value;
+    const isActive = document.getElementById('config-active').checked;
+
+    if (!name || !provider) {
+        showAlert('请填写配置名称和情报源类型', 'error');
+        return;
+    }
+    if (!id && !apiKey) {
+        showAlert('请输入API Key', 'error');
+        return;
+    }
+
+    const data = { name, provider, api_base_url: apiUrl, is_active: isActive };
+    if (apiKey) data.api_key = apiKey;
+
+    try {
+        let result;
+        if (id) {
+            result = await apiRequest('/api/threat-intel/configs/' + id, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        } else {
+            result = await apiRequest('/api/threat-intel/configs', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        }
+        if (result && result.success) {
+            showAlert(result.message, 'success');
+            closeConfigModal();
+            loadConfigs();
+        }
+    } catch (e) {
+        showAlert('保存失败: ' + e.message, 'error');
+    }
+}
+
+async function deleteConfig(id) {
+    if (!confirm('确定删除该配置吗？')) return;
+    try {
+        const result = await apiRequest('/api/threat-intel/configs/' + id, { method: 'DELETE' });
+        if (result && result.success) {
+            showAlert(result.message, 'success');
+            loadConfigs();
+        }
+    } catch (e) {
+        showAlert('删除失败: ' + e.message, 'error');
+    }
+}
+
+async function doQuery() {
+    const queryType = document.getElementById('query-type').value;
+    const queryValue = document.getElementById('query-value').value.trim();
+    const configId = document.getElementById('query-provider').value;
+
+    if (!queryValue) {
+        showAlert('请输入查询内容', 'error');
+        return;
+    }
+
+    const resultDiv = document.getElementById('query-result');
+    resultDiv.innerHTML = '<div class="loading-indicator"><div class="loading-spinner"></div>正在查询...</div>';
+
+    try {
+        const result = await apiRequest('/api/threat-intel/query', {
+            method: 'POST',
+            body: JSON.stringify({ query_type: queryType, query_value: queryValue, config_id: configId })
+        });
+        
+        if (!result) return;
+        
+        if (result.success) {
+            currentQueryResult = result;
+            currentQueryType = queryType;
+            currentQueryValue = queryValue;
+            renderQueryResult(result);
+        } else {
+            resultDiv.innerHTML = `<div class="result-card" style="border-left:3px solid #ff9800;background:rgba(255,152,0,0.08);">
+                <div class="result-header">
+                    <span class="result-title">查询失败</span>
+                    <span class="result-badge" style="background:rgba(255,152,0,0.2);color:#ff9800;">错误</span>
+                </div>
+                <div class="detail-value">${result.message || '未知错误'}</div>
+            </div>`;
+        }
+    } catch (e) {
+        resultDiv.innerHTML = `<div class="result-card" style="border-left:3px solid #ff6b6b;background:rgba(255,107,107,0.08);">
+            <div class="result-header">
+                <span class="result-title">查询异常</span>
+                <span class="result-badge malicious">失败</span>
+            </div>
+            <div class="detail-value">${e.message}</div>
+        </div>`;
+    }
+}
+
+function renderQueryResult(result) {
+    const isMalicious = result.is_malicious;
+    const details = result.details || {};
+    const providerNames = { threatbook: '微步在线', virustotal: 'VirusTotal', abuseipdb: 'AbuseIPDB' };
+    
+    let html = `<div class="result-card ${isMalicious ? 'malicious' : 'safe'}">
+        <div class="result-header">
+            <span class="result-title">
+                ${isMalicious ? '⚠ 检测到威胁' : '✓ 未检测到威胁'}
+            </span>
+            <span class="result-badge ${isMalicious ? 'malicious' : 'safe'}">
+                ${isMalicious ? '恶意' : '安全'}
+            </span>
+        </div>`;
+    
+    html += '<div class="detail-grid">';
+    for (const [key, value] of Object.entries(details)) {
+        if (typeof value === 'object' && value !== null) continue;
+        const labelMap = {
+            ip: 'IP地址',
+            domain: '域名',
+            url: 'URL地址',
+            hash: '文件哈希',
+            location: '位置',
+            country: '国家',
+            province: '省份',
+            city: '城市',
+            carrier: '运营商',
+            asn_number: 'ASN编号',
+            asn_info: 'ASN名称',
+            asn_rank: 'ASN等级',
+            as_owner: 'AS所有者',
+            registrar: '注册商',
+            create_time: '创建时间',
+            final_url: '最终URL',
+            file_name: '文件名',
+            file_size: '文件大小',
+            isp: 'ISP',
+            abuse_score: '滥用评分',
+            total_reports: '报告次数',
+            last_reported: '最后报告时间',
+            malicious_engines: '恶意引擎数',
+            total_engines: '总引擎数',
+            reputation: '信誉分',
+            severity: '严重程度',
+            judgments: '判定结果',
+            tags: '标签',
+            detected_engines: '检出引擎数',
+            malware_type: '恶意类型'
+        };
+        const label = labelMap[key] || key;
+        const displayValue = Array.isArray(value) ? value.join(', ') : (value || '-');
+        html += `<div class="detail-item">
+            <span class="detail-label">${label}:</span>
+            <span class="detail-value">${displayValue}</span>
+        </div>`;
+    }
+    
+    if (result.threat_type) {
+        html += `<div class="detail-item">
+            <span class="detail-label">威胁类型:</span>
+            <span class="detail-value" style="color:#ff6b6b;font-weight:600;">${result.threat_type}</span>
+        </div>`;
+    }
+    
+    if (result.confidence !== undefined && result.confidence !== null) {
+        html += `<div class="detail-item">
+            <span class="detail-label">置信度:</span>
+            <span class="detail-value">${(result.confidence * 100).toFixed(1)}%</span>
+        </div>`;
+    }
+    
+    html += `<div class="detail-item">
+        <span class="detail-label">情报源:</span>
+        <span class="detail-value">${providerNames[result.provider] || result.provider || '-'}</span>
+    </div>`;
+    
+    html += '</div>';
+    
+    html += `<div style="margin-top:16px;">
+        <button class="btn btn-primary" style="font-size:13px;padding:8px 20px;" onclick="analyzeWithAI()" id="ai-analyze-btn">
+            🤖 AI智能分析
+        </button>
+    </div>`;
+
+    html += `<div id="ai-analysis-result" style="display:none;margin-top:16px;">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;">
+            🤖 AI分析结果
+        </div>
+        <div class="ai-analysis-content" id="ai-analysis-content"></div>
+    </div>`;
+    
+    if (result.raw_data) {
+        html += `<div style="margin-top:16px;">
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;cursor:pointer;" onclick="toggleRawData()">
+                <span id="raw-data-toggle">▼ 查看原始数据</span>
+            </div>
+            <div class="raw-data-box" id="raw-data-box" style="display:none;">${JSON.stringify(result.raw_data, null, 2)}</div>
+        </div>`;
+    }
+    
+    html += '</div>';
+    document.getElementById('query-result').innerHTML = html;
+}
+
+function toggleRawData() {
+    const box = document.getElementById('raw-data-box');
+    const toggle = document.getElementById('raw-data-toggle');
+    if (box.style.display === 'none') {
+        box.style.display = 'block';
+        toggle.textContent = '▲ 收起原始数据';
+    } else {
+        box.style.display = 'none';
+        toggle.textContent = '▼ 查看原始数据';
+    }
+}
+
+let currentQueryResult = null;
+let currentQueryType = null;
+let currentQueryValue = null;
+
+async function analyzeWithAI() {
+    if (!currentQueryResult) {
+        showAlert('请先进行情报查询', 'error');
+        return;
+    }
+    
+    const btn = document.getElementById('ai-analyze-btn');
+    const resultBox = document.getElementById('ai-analysis-result');
+    const contentBox = document.getElementById('ai-analysis-content');
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ 分析中...';
+    resultBox.style.display = 'block';
+    contentBox.innerHTML = '<div style="color:#888;font-size:13px;">正在调用AI进行威胁分析，请稍候...</div>';
+    
+    try {
+        const data = await apiRequest('/api/threat-intel/analyze', {
+            method: 'POST',
+            body: JSON.stringify({
+                query_type: currentQueryType,
+                query_value: currentQueryValue,
+                intel_result: currentQueryResult
+            })
+        });
+        
+        if (data.success) {
+            contentBox.innerHTML = formatAnalysisText(data.analysis);
+        } else {
+            contentBox.innerHTML = `<div style="color:#ff6b6b;font-size:13px;">分析失败: ${data.message}</div>`;
+        }
+    } catch (e) {
+        contentBox.innerHTML = `<div style="color:#ff6b6b;font-size:13px;">分析失败: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 AI智能分析';
+    }
+}
+
+function formatAnalysisText(text) {
+    const lines = text.split('\n');
+    let html = '';
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            html += '<br/>';
+        } else if (/^[一二三四五六七八九十]+[、.]/.test(trimmed) || /^\d+[、.)]/.test(trimmed)) {
+            html += `<div style="font-weight:600;margin-top:12px;margin-bottom:6px;color:#00d4ff;">${trimmed}</div>`;
+        } else if (/^[（(][一二三四五六七八九十\d]+[）)]/.test(trimmed) || /^[-•·]/.test(trimmed)) {
+            html += `<div style="margin-left:16px;margin-bottom:4px;">${trimmed}</div>`;
+        } else {
+            html += `<div style="margin-bottom:4px;">${trimmed}</div>`;
+        }
+    }
+    return html;
+}
+
+async function loadRecords(page) {
+    currentPage = page;
+    const typeFilter = document.getElementById('record-type-filter').value;
+    const maliciousFilter = document.getElementById('record-malicious-filter').value;
+    
+    let url = `/api/threat-intel/records?page=${page}&per_page=20`;
+    if (typeFilter) url += `&query_type=${typeFilter}`;
+    if (maliciousFilter) url += `&is_malicious=${maliciousFilter}`;
+    
+    try {
+        const data = await apiRequest(url);
+        const tbody = document.getElementById('records-tbody');
+        
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">暂无记录</td></tr>';
+            document.getElementById('records-pagination').innerHTML = '';
+            return;
+        }
+        
+        const providerNames = { threatbook: '微步在线', virustotal: 'VirusTotal', abuseipdb: 'AbuseIPDB' };
+        const typeNames = { ip: 'IP', domain: '域名', url: 'URL', file: '文件' };
+        
+        tbody.innerHTML = data.items.map(r => `
+            <tr>
+                <td>${typeNames[r.query_type] || r.query_type}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.query_value}">${r.query_value}</td>
+                <td>${providerNames[r.provider] || r.provider || '-'}</td>
+                <td>${r.is_malicious === true ? '<span class="badge badge-phishing">恶意</span>' : r.is_malicious === false ? '<span class="badge badge-normal">安全</span>' : '-'}</td>
+                <td style="font-size:12px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.threat_type || ''}">${r.threat_type || '-'}</td>
+                <td>${r.confidence !== null && r.confidence !== undefined ? (r.confidence * 100).toFixed(0) + '%' : '-'}</td>
+                <td style="font-size:12px;">${r.queried_at || '-'}</td>
+            </tr>
+        `).join('');
+        
+        renderPagination(data.pages, data.page, 'records-pagination', loadRecords);
+    } catch (e) {
+        showAlert('加载记录失败: ' + e.message, 'error');
+    }
+}
+
+function renderPagination(totalPages, currentPage, containerId, callback) {
+    const container = document.getElementById(containerId);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    let html = `<button onclick="${callback.name}(1)" ${currentPage === 1 ? 'disabled' : ''}>首页</button>`;
+    html += `<button onclick="${callback.name}(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+    
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, currentPage + 2);
+    for (let i = start; i <= end; i++) {
+        html += `<button class="${i === currentPage ? 'active' : ''}" onclick="${callback.name}(${i})">${i}</button>`;
+    }
+    
+    html += `<button onclick="${callback.name}(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+    html += `<button onclick="${callback.name}(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>末页</button>`;
+    
+    container.innerHTML = html;
+}
+
+function initIntelPage() {
+    if (typeof currentUser !== 'undefined' && currentUser !== null) {
+        if (currentUser.role === 'admin') {
+            document.querySelectorAll('.admin-only').forEach(el => {
+                el.style.display = '';
+            });
+            loadConfigs();
+        }
+        return;
+    }
+    
+    const checkInterval = setInterval(() => {
+        if (typeof currentUser !== 'undefined' && currentUser !== null) {
+            clearInterval(checkInterval);
+            if (currentUser.role === 'admin') {
+                document.querySelectorAll('.admin-only').forEach(el => {
+                    el.style.display = '';
+                });
+                loadConfigs();
+            }
+        }
+    }, 50);
+    
+    setTimeout(() => {
+        clearInterval(checkInterval);
+    }, 5000);
+}
+
+function showExportIntelOptions() {
+    document.getElementById('export-intel-options').style.display = 'flex';
+}
+function hideExportIntelOptions() {
+    document.getElementById('export-intel-options').style.display = 'none';
+}
+function doExportIntel() {
+    const startDate = document.getElementById('intel-export-start').value;
+    const endDate = document.getElementById('intel-export-end').value;
+    const limit = document.getElementById('intel-export-limit').value;
+    const queryType = document.getElementById('record-type-filter').value;
+    
+    let params = [];
+    if (queryType) params.push(`query_type=${queryType}`);
+    if (startDate) params.push(`start_date=${startDate}`);
+    if (endDate) params.push(`end_date=${endDate}`);
+    if (limit) params.push(`limit=${limit}`);
+    
+    let url = '/api/threat-intel/export';
+    if (params.length > 0) url += '?' + params.join('&');
+    window.open(url, '_blank');
+    hideExportIntelOptions();
+}
+
+async function loadIntelOverview() {
+    try {
+        const stats = await apiRequest('/api/threat-intel/overview');
+        document.getElementById('stat-malicious').textContent = stats.malicious_count || 0;
+        document.getElementById('stat-safe').textContent = stats.safe_count || 0;
+        document.getElementById('stat-total').textContent = stats.total_count || 0;
+        document.getElementById('stat-today').textContent = stats.today_count || 0;
+        
+        if (stats.recent_threats && stats.recent_threats.length > 0) {
+            const list = document.getElementById('recent-threats-list');
+            list.innerHTML = stats.recent_threats.map(t => `
+                <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:13px;color:var(--text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.query_value}">${t.query_value}</span>
+                    <span style="font-size:12px;color:#ff6b6b;">${t.threat_type || '恶意'}</span>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        console.log('加载威胁概览失败:', e.message);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', initIntelPage);
+document.addEventListener('DOMContentLoaded', loadIntelOverview);
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initIntelPage);
+    document.addEventListener('DOMContentLoaded', loadIntelOverview);
+} else {
+    initIntelPage();
+    loadIntelOverview();
+}
+</script>
+{% endblock %}

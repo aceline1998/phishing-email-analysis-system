@@ -1,0 +1,1109 @@
+{% extends "base.html" %}
+{% block title %}邮件管理 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <button class="btn btn-primary" id="tab-inbox" onclick="switchTab('inbox')" style="height:36px;padding:0 14px;font-size:14px;border-radius:4px;white-space:nowrap;">收件箱</button>
+            <button class="btn btn-secondary" id="tab-sent" onclick="switchTab('sent')" style="height:36px;padding:0 14px;font-size:14px;border-radius:4px;white-space:nowrap;">发件箱</button>
+            <div style="width:1px;height:24px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
+            <select class="form-select" id="status-filter" style="width:110px;height:36px;padding:0 8px;font-size:13px;">
+                <option value="">全部状态</option>
+                <option value="pending">待处理</option>
+                <option value="analyzed">已分析</option>
+                <option value="replied">已回复</option>
+            </select>
+            <select class="form-select" id="result-filter" style="width:110px;height:36px;padding:0 8px;font-size:13px;">
+                <option value="">全部结果</option>
+                <option value="phishing">钓鱼邮件</option>
+                <option value="normal">正常邮件</option>
+            </select>
+            <input type="date" id="start-date" class="form-input" style="width:130px;height:36px;padding:0 8px;font-size:13px;">
+            <span style="color:var(--text-muted);font-size:13px;">至</span>
+            <input type="date" id="end-date" class="form-input" style="width:130px;height:36px;padding:0 8px;font-size:13px;">
+            <button class="btn btn-secondary" onclick="applyFilters()" style="height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">应用筛选</button>
+            <button class="btn btn-secondary" onclick="clearFilters()" style="height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">清除筛选</button>
+            <button class="btn btn-success" id="btn-fetch-emails" onclick="fetchEmails()" style="display:none;height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">📥 同步收件箱</button>
+            <button class="btn btn-info" id="btn-import-eml" onclick="showImportModal()" style="display:none;height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">导入离线邮件</button>
+            <button class="btn btn-primary" id="btn-send-test" onclick="showTestEmailModal()" style="display:none;height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">发送测试邮件</button>
+            <button class="btn btn-secondary" id="btn-export-emails" onclick="showExportOptions()" style="display:none;height:36px;padding:0 12px;font-size:13px;white-space:nowrap;">导出邮件列表</button>
+        </div>
+
+        <div id="inbox-header">
+            <div id="export-options" style="display:none;gap:10px;align-items:center;margin-top:10px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                <span style="color:var(--text-muted);font-size:13px;">导出范围:</span>
+                <input type="date" id="export-start-date" class="form-input" style="width:140px;height:36px;padding:0 10px;font-size:14px;">
+                <span style="color:var(--text-muted);">至</span>
+                <input type="date" id="export-end-date" class="form-input" style="width:140px;height:36px;padding:0 10px;font-size:14px;">
+                <select id="export-limit" class="form-select" style="width:110px;height:36px;padding:0 10px;font-size:14px;">
+                    <option value="">全部记录</option>
+                    <option value="10">近10条</option>
+                    <option value="50">近50条</option>
+                    <option value="100">近100条</option>
+                </select>
+                <button class="btn btn-primary" onclick="doExportEmails()" style="height:36px;padding:0 14px;font-size:14px;">确认导出</button>
+                <button class="btn btn-secondary" onclick="hideExportOptions()" style="height:36px;padding:0 14px;font-size:14px;">取消</button>
+            </div>
+            <div id="batch-actions" style="margin-top:12px;display:none;gap:10px;align-items:center;">
+                <span style="color:var(--text-muted);">已选 <span id="selected-count" style="color:#00d4ff;font-weight:bold;">0</span> 封邮件</span>
+                <button class="btn btn-primary" onclick="batchAnalyze()" style="height:36px;padding:0 14px;font-size:14px;">批量AI分析</button>
+                <button class="btn btn-success" onclick="batchReply()" style="height:36px;padding:0 14px;font-size:14px;">批量回复结果</button>
+                <button class="btn btn-secondary" onclick="clearSelection()" style="height:36px;padding:0 14px;font-size:14px;">清除选择</button>
+            </div>
+        </div>
+
+        <div id="sent-header" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:nowrap;gap:12px;">
+                <span class="card-title" style="white-space:nowrap;">已发送邮件</span>
+                <button class="btn btn-secondary" onclick="exportSentEmails()" style="height:36px;padding:0 12px;font-size:13px;white-space:nowrap;flex-shrink:0;">📊 导出发件记录</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="inbox-content">
+        <table class="table" id="emails-table">
+            <thead>
+                <tr>
+                    <th style="width:40px;"><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"></th>
+                    <th>来源</th><th>发件人名称</th><th>发件人邮箱</th><th>主题</th><th>状态</th><th>分析结果</th><th>收到时间</th><th>操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div id="pagination" class="pagination"></div>
+    </div>
+    
+    <div id="sent-content" style="display:none;">
+        <table class="table" id="sent-emails-table">
+            <thead>
+                <tr>
+                    <th>收件人名称</th><th>收件人邮箱</th><th>主题</th><th>原始邮件</th><th>发送时间</th><th>状态</th><th>操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div id="sent-pagination" class="pagination"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="email-detail-modal" onclick="closeEmailModal()">
+    <div class="modal" id="email-detail-modal-content" style="width:95%; max-width:1200px;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">邮件详情</span>
+            <button class="modal-close" onclick="closeEmailModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="email-detail-body"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeEmailModal()">关闭</button>
+            <button class="btn btn-primary" id="btn-analyze" onclick="analyzeCurrentEmail()">AI分析</button>
+            <button class="btn btn-success" id="btn-reply" onclick="showReplyModal()">回复邮件</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="reply-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">回复邮件</span>
+            <button class="modal-close" onclick="closeReplyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">选择模板</label>
+                <select class="form-select" id="reply-template-select">
+                    <option value="">不使用模板（手动填写）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">主题</label>
+                <input type="text" class="form-input" id="reply-subject">
+            </div>
+            <div class="form-group">
+                <label class="form-label">正文</label>
+                <textarea class="form-textarea" id="reply-body"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeReplyModal()">取消</button>
+            <button class="btn btn-primary" onclick="sendReply()">发送分析结果回复</button>
+            <button class="btn btn-success" onclick="sendCustomReply()">发送自定义回复</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="test-email-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">发送测试邮件</span>
+            <button class="modal-close" onclick="closeTestEmailModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">收件人邮箱</label>
+                <input type="email" class="form-input" id="test-to-email" placeholder="请输入收件人邮箱地址">
+            </div>
+            <div class="form-group">
+                <label class="form-label">邮件主题</label>
+                <input type="text" class="form-input" id="test-subject" value="测试邮件">
+            </div>
+            <div class="form-group">
+                <label class="form-label">邮件内容</label>
+                <textarea class="form-textarea" id="test-body" rows="5">这是一封测试邮件，用于验证邮件服务器配置是否正常。
+
+发送时间：当前时间
+
+如有疑问，请联系系统管理员。</textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeTestEmailModal()">取消</button>
+            <button class="btn btn-primary" onclick="sendTestEmail()">发送测试邮件</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="fetch-modal">
+    <div class="modal" style="width:460px;">
+        <div class="modal-header">
+            <span class="modal-title">获取邮件</span>
+            <button class="modal-close" onclick="closeFetchModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="margin-bottom:20px;">
+                <label class="form-label" style="display:block;margin-bottom:8px;">收取数量</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select class="form-select" id="fetch-limit" style="width:160px;">
+                        <option value="0">全部邮件</option>
+                        <option value="50">最近50封</option>
+                        <option value="100">最近100封</option>
+                        <option value="200">最近200封</option>
+                        <option value="500">最近500封</option>
+                    </select>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">选择"全部邮件"将收取邮箱中所有邮件（包括旧邮件），已收取的不会重复</p>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" id="fetch-auto-analyze" style="width:16px;height:16px;">
+                    <span>收取后自动进行AI分析</span>
+                </label>
+                <p style="font-size:12px;color:var(--text-muted);margin-top:6px;">勾选后将自动对所有新收取的邮件进行AI钓鱼分析</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeFetchModal()">取消</button>
+            <button class="btn btn-primary" onclick="doFetchEmails()" id="btn-do-fetch">开始收取</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="import-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">导入离线邮件</span>
+            <button class="modal-close" onclick="closeImportModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">选择 .eml 文件</label>
+                <div class="file-upload-area" id="file-upload-area" onclick="document.getElementById('eml-file').click()">
+                    <div class="file-upload-icon">📁</div>
+                    <div class="file-upload-text">点击选择或拖拽文件到此处</div>
+                    <div class="file-upload-hint">支持 .eml 格式，可多选批量导入</div>
+                    <div class="file-upload-selected" id="file-selected-list"></div>
+                </div>
+                <input type="file" id="eml-file" accept=".eml" multiple style="display:none;" onchange="updateFileList()">
+            </div>
+            <div id="import-result" style="display:none;margin-top:12px;"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+            <button class="btn btn-primary" onclick="importEmlFiles()">导入</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="correct-modal" onclick="closeCorrectModal()">
+    <div class="modal" style="width:520px;max-height:85vh;display:flex;flex-direction:column;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">人工纠错</span>
+            <button class="modal-close" onclick="closeCorrectModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="overflow-y:auto;max-height:calc(85vh - 120px);padding:16px 20px;">
+            <div id="correct-email-info" style="margin-bottom:12px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:13px;line-height:1.6;"></div>
+            <div style="display:flex;gap:12px;margin-bottom:12px;">
+                <div style="flex:1;">
+                    <label class="form-label" style="margin-bottom:4px;font-size:13px;">原分析结果</label>
+                    <div id="correct-original-result" style="padding:8px;background:rgba(0,0,0,0.1);border-radius:4px;font-size:12px;line-height:1.5;"></div>
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label" style="margin-bottom:4px;font-size:13px;">正确判定结果</label>
+                    <div style="display:flex;flex-direction:column;gap:6px;padding:8px;background:rgba(0,0,0,0.1);border-radius:4px;font-size:12px;">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="radio" name="correct-is-phishing" value="true" checked>
+                            <span>钓鱼邮件</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="radio" name="correct-is-phishing" value="false">
+                            <span>正常邮件</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;margin-bottom:12px;">
+                <div style="flex:1;">
+                    <label class="form-label" style="margin-bottom:4px;font-size:13px;">风险等级</label>
+                    <select class="form-select" id="correct-risk-level" style="height:36px;font-size:13px;padding:0 8px;line-height:36px;">
+                        <option value="high">高危</option>
+                        <option value="medium">中危</option>
+                        <option value="low">低危</option>
+                    </select>
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label" style="margin-bottom:4px;font-size:13px;">钓鱼类型</label>
+                    <input type="text" class="form-input" id="correct-phishing-type" placeholder="如：仿冒登录" style="height:32px;font-size:13px;">
+                </div>
+            </div>
+            <div style="margin-bottom:0;">
+                <label class="form-label" style="margin-bottom:4px;font-size:13px;">纠错原因</label>
+                <textarea class="form-textarea" id="correct-reason" rows="2" placeholder="简要说明纠错原因" style="font-size:13px;"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer" style="padding:12px 20px;border-top:1px solid rgba(255,255,255,0.08);">
+            <button class="btn btn-secondary" onclick="closeCorrectModal()" style="height:32px;padding:0 16px;font-size:13px;">取消</button>
+            <button class="btn btn-warning" onclick="submitCorrection()" style="height:32px;padding:0 16px;font-size:13px;">提交纠错</button>
+        </div>
+    </div>
+</div>{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let currentEmailId = null;
+let templates = [];
+
+function initEmailsPage() {
+    if (typeof currentUser !== 'undefined' && currentUser !== null) {
+        if (currentUser.role === 'admin') {
+            document.getElementById('btn-fetch-emails').style.display = 'inline-flex';
+            document.getElementById('btn-send-test').style.display = 'inline-flex';
+            document.getElementById('btn-import-eml').style.display = 'inline-flex';
+            if (currentTab === 'inbox') {
+                document.getElementById('btn-export-emails').style.display = 'inline-flex';
+            }
+        }
+        loadEmails();
+        return;
+    }
+
+    const checkInterval = setInterval(() => {
+        if (typeof currentUser !== 'undefined' && currentUser !== null) {
+            clearInterval(checkInterval);
+            if (currentUser.role === 'admin') {
+                document.getElementById('btn-fetch-emails').style.display = 'inline-flex';
+                document.getElementById('btn-send-test').style.display = 'inline-flex';
+                document.getElementById('btn-import-eml').style.display = 'inline-flex';
+                if (currentTab === 'inbox') {
+                    document.getElementById('btn-export-emails').style.display = 'inline-flex';
+                }
+            }
+            loadEmails();
+        }
+    }, 50);
+
+    setTimeout(() => {
+        clearInterval(checkInterval);
+    }, 5000);
+
+    // 每5分钟自动刷新邮件列表
+    setInterval(() => {
+        if (typeof currentUser !== 'undefined' && currentUser !== null) {
+            if (currentTab === 'inbox') {
+                loadEmails();
+            } else {
+                loadSentEmails();
+            }
+        }
+    }, 300000);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEmailsPage);
+} else {
+    initEmailsPage();
+}
+
+function applyFilters() {
+    currentPage = 1;
+    loadEmails();
+}
+
+function clearFilters() {
+    document.getElementById('status-filter').value = '';
+    document.getElementById('result-filter').value = '';
+    document.getElementById('start-date').value = '';
+    document.getElementById('end-date').value = '';
+    currentPage = 1;
+    loadEmails();
+}
+
+document.getElementById('status-filter').addEventListener('change', () => { currentPage = 1; loadEmails(); });
+document.getElementById('result-filter').addEventListener('change', () => { currentPage = 1; loadEmails(); });
+
+async function loadEmails() {
+    const status = document.getElementById('status-filter').value;
+    const result = document.getElementById('result-filter').value;
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    let url = `/api/emails?page=${currentPage}&per_page=15`;
+    if (status) url += `&status=${status}`;
+    if (result) url += `&is_phishing=${result === 'phishing' ? 'true' : 'false'}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    try {
+        const data = await apiRequest(url);
+        const tbody = document.querySelector('#emails-table tbody');
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#888;padding:40px;">暂无邮件数据</td></tr>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+        tbody.innerHTML = data.items.map(e => {
+            let statusBadge = '<span class="badge badge-pending">待处理</span>';
+            if (e.status === 'analyzed') statusBadge = '<span class="badge badge-analyzed">已分析</span>';
+            else if (e.status === 'replied') statusBadge = '<span class="badge badge-replied">已回复</span>';
+            else if (e.status === 'analyzing') statusBadge = '<span class="badge badge-pending">分析中...</span>';
+            let resultBadge = '';
+            if (e.analysis) {
+                resultBadge = e.analysis.is_phishing
+                    ? '<span class="badge badge-phishing">钓鱼邮件</span>'
+                    : '<span class="badge badge-normal">正常邮件</span>';
+            }
+            let sourceBadge = e.source === 'mail_server' 
+                ? '<span class="badge" style="background:rgba(0,212,255,0.2);color:#00d4ff;">在线收取</span>'
+                : '<span class="badge" style="background:rgba(255,193,7,0.2);color:#ffc107;">离线导入</span>';
+            let fromName = e.from_email || '';
+            let fromAddr = '';
+            const match = fromName.match(/(.*?)\s*<(.+?)>/);
+            if (match) {
+                fromName = match[1].trim().replace(/^["']|["']$/g, '');
+                fromAddr = match[2].trim();
+            } else if (fromName.includes('@')) {
+                fromAddr = fromName;
+                fromName = '';
+            }
+            return `<tr data-id="${e.id}">
+                <td><input type="checkbox" class="email-checkbox" value="${e.id}" onchange="updateBatchActions()"></td>
+                <td>${sourceBadge}</td>
+                <td>${fromName || '-'}</td>
+                <td>${fromAddr || '-'}</td>
+                <td>${e.subject || '(无主题)'}</td>
+                <td>${statusBadge}</td>
+                <td>${resultBadge || '-'}</td>
+                <td>${formatDate(e.received_at)}</td>
+                <td style="display:flex;gap:6px;">
+                    <button class="btn btn-sm btn-secondary" onclick="showEmailDetail(${e.id})">查看</button>
+                    ${!e.analysis ? `<button class="btn btn-sm btn-primary" onclick="analyzeEmailRow(${e.id}, this)">分析</button>` : `<button class="btn btn-sm btn-warning" onclick="showCorrectModal(${e.id})">纠错</button>`}
+                    <button class="btn btn-sm btn-success" onclick="downloadEml(${e.id})">导出EML</button>
+                </td>
+            </tr>`;
+        }).join('');
+
+        let pagesHtml = '';
+        pagesHtml += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(1)">首页</button>`;
+        pagesHtml += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(${currentPage - 1})">上一页</button>`;
+        
+        const totalPages = data.pages;
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, currentPage + 2);
+        
+        if (startPage > 1) {
+            pagesHtml += `<button onclick="goPage(1)">1</button>`;
+            if (startPage > 2) {
+                pagesHtml += `<span style="color:var(--text-muted);padding:0 4px;">...</span>`;
+            }
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            pagesHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+        }
+        
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                pagesHtml += `<span style="color:var(--text-muted);padding:0 4px;">...</span>`;
+            }
+            pagesHtml += `<button onclick="goPage(${totalPages})">${totalPages}</button>`;
+        }
+        
+        pagesHtml += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${currentPage + 1})">下一页</button>`;
+        pagesHtml += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${totalPages})">末页</button>`;
+        
+        document.getElementById('pagination').innerHTML = pagesHtml;
+    } catch (e) {
+        showAlert('加载邮件失败: ' + e.message, 'error');
+    }
+}
+
+function goPage(p) { currentPage = p; loadEmails(); }
+
+function showEmailDetail(id) {
+    window.location.href = '/email/' + id;
+}
+
+function closeEmailModal() { document.getElementById('email-detail-modal').classList.remove('active'); }
+
+function showExportOptions() {
+    document.getElementById('export-options').style.display = 'flex';
+}
+function hideExportOptions() {
+    document.getElementById('export-options').style.display = 'none';
+}
+function doExportEmails() {
+    const status = document.getElementById('status-filter').value;
+    const startDate = document.getElementById('export-start-date').value;
+    const endDate = document.getElementById('export-end-date').value;
+    const limit = document.getElementById('export-limit').value;
+    
+    let params = [];
+    if (status) params.push(`status=${status}`);
+    if (startDate) params.push(`start_date=${startDate}`);
+    if (endDate) params.push(`end_date=${endDate}`);
+    if (limit) params.push(`limit=${limit}`);
+    
+    let url = '/api/emails/export';
+    if (params.length > 0) url += '?' + params.join('&');
+    window.open(url, '_blank');
+    hideExportOptions();
+}
+
+function exportSentEmails() {
+    window.open('/api/sent-emails/export', '_blank');
+}
+
+async function analyzeCurrentEmail() {
+    if (!currentEmailId) return;
+    document.getElementById('btn-analyze').innerHTML = '<span class="loading"></span> 分析中...';
+    try {
+        const result = await apiRequest(`/api/emails/${currentEmailId}/analyze`, { method: 'POST' });
+        showAlert('分析完成: ' + (result.is_phishing ? '钓鱼邮件' : '正常邮件'), result.is_phishing ? 'error' : 'success');
+        showEmailDetail(currentEmailId);
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        document.getElementById('btn-analyze').innerHTML = 'AI分析';
+    }
+}
+
+async function analyzeEmailRow(emailId, btn) {
+    btn.disabled = true;
+    btn.textContent = '分析中...';
+    try {
+        const result = await apiRequest(`/api/emails/${emailId}/analyze`, { method: 'POST' });
+        showAlert(`分析完成: ${result.is_phishing ? '钓鱼邮件' : '正常邮件'} (置信度${(result.confidence * 100).toFixed(0)}%)`, result.is_phishing ? 'error' : 'success');
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '分析';
+    }
+}
+
+async function loadTemplates() {
+    try {
+        templates = await apiRequest('/api/reply-templates');
+        const select = document.getElementById('reply-template-select');
+        select.innerHTML = '<option value="">不使用模板（手动填写）</option>' +
+            templates.map(t => `<option value="${t.id}">${t.name} (${t.type})</option>`).join('');
+    } catch (e) {}
+}
+
+function showTestEmailModal() {
+    const now = new Date();
+    document.getElementById('test-to-email').value = '';
+    document.getElementById('test-subject').value = '测试邮件';
+    document.getElementById('test-body').value = `这是一封测试邮件，用于验证邮件服务器配置是否正常。\n\n发送时间：${now.toLocaleString('zh-CN')}\n\n如有疑问，请联系系统管理员。`;
+    document.getElementById('test-email-modal').classList.add('active');
+}
+
+function closeTestEmailModal() {
+    document.getElementById('test-email-modal').classList.remove('active');
+}
+
+async function sendTestEmail() {
+    const toEmail = document.getElementById('test-to-email').value;
+    const subject = document.getElementById('test-subject').value;
+    const body = document.getElementById('test-body').value;
+
+    if (!toEmail) {
+        showAlert('请输入收件人邮箱', 'error');
+        return;
+    }
+
+    const btn = document.querySelector('#test-email-modal .btn-primary');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading"></span> 发送中...';
+    btn.disabled = true;
+
+    try {
+        const result = await apiRequest('/api/send-test-email', {
+            method: 'POST',
+            body: JSON.stringify({ to_email: toEmail, subject: subject, body: body })
+        });
+        if (result && result.success) {
+            showAlert('测试邮件发送成功', 'success');
+            closeTestEmailModal();
+        } else {
+            showAlert(result ? result.message : '发送失败', 'error');
+        }
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+function updateFileList() {
+    const fileInput = document.getElementById('eml-file');
+    const files = fileInput.files;
+    const listDiv = document.getElementById('file-selected-list');
+    if (!files || files.length === 0) {
+        listDiv.innerHTML = '';
+        return;
+    }
+    let html = '';
+    for (let i = 0; i < files.length; i++) {
+        html += `<span class="file-tag">📄 ${files[i].name}</span>`;
+    }
+    listDiv.innerHTML = html;
+}
+
+// 拖拽上传支持
+const uploadArea = document.getElementById('file-upload-area');
+if (uploadArea) {
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.add('drag-over');
+    });
+    uploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('drag-over');
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        const fileInput = document.getElementById('eml-file');
+        const dt = new DataTransfer();
+        for (let i = 0; i < files.length; i++) {
+            if (files[i].name.endsWith('.eml')) {
+                dt.items.add(files[i]);
+            }
+        }
+        fileInput.files = dt.files;
+        updateFileList();
+    });
+}
+
+function showImportModal() {
+    document.getElementById('eml-file').value = '';
+    document.getElementById('file-selected-list').innerHTML = '';
+    document.getElementById('import-result').style.display = 'none';
+    document.getElementById('import-result').innerHTML = '';
+    document.getElementById('import-modal').classList.add('active');
+}
+
+function closeImportModal() {
+    document.getElementById('import-modal').classList.remove('active');
+}
+
+async function importEmlFiles() {
+    const fileInput = document.getElementById('eml-file');
+    const files = fileInput.files;
+    
+    if (!files || files.length === 0) {
+        showAlert('请选择文件', 'error');
+        return;
+    }
+    
+    const btn = document.querySelector('#import-modal .btn-primary');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading"></span> 导入中...';
+    btn.disabled = true;
+    
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="color:var(--text-muted);">正在导入...</div>';
+    
+    try {
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i]);
+        }
+        
+        const response = await fetch('/api/batch-import-eml', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            resultDiv.innerHTML = `
+                <div style="color:#00ff88;padding:12px;background:rgba(0,255,136,0.1);border-radius:6px;">
+                    <strong>导入完成</strong><br>
+                    成功: ${result.success_count} 封<br>
+                    重复: ${result.duplicate_count} 封<br>
+                    失败: ${result.fail_count} 封
+                </div>
+            `;
+            if (result.success_count > 0) {
+                loadEmails();
+            }
+        } else {
+            resultDiv.innerHTML = `<div style="color:#ff6b6b;">${result.message}</div>`;
+        }
+    } catch (e) {
+        resultDiv.innerHTML = `<div style="color:#ff6b6b;">导入失败: ${e.message}</div>`;
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+document.getElementById('reply-template-select').addEventListener('change', function() {
+    const tpl = templates.find(t => t.id == this.value);
+    if (tpl) {
+        document.getElementById('reply-subject').value = tpl.subject_template;
+        document.getElementById('reply-body').value = tpl.body_template;
+    }
+});
+
+function showReplyModal() {
+    document.getElementById('reply-subject').value = '';
+    document.getElementById('reply-body').value = '';
+    document.getElementById('reply-template-select').value = '';
+    document.getElementById('reply-modal').classList.add('active');
+}
+function closeReplyModal() { document.getElementById('reply-modal').classList.remove('active'); }
+
+async function sendReply() {
+    if (!currentEmailId) return;
+    const payload = {
+        use_analysis_template: true
+    };
+    try {
+        await apiRequest(`/api/emails/${currentEmailId}/reply`, { method: 'POST', body: JSON.stringify(payload) });
+        closeReplyModal();
+        showAlert('回复已发送', 'success');
+        showEmailDetail(currentEmailId);
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function sendCustomReply() {
+    if (!currentEmailId) return;
+    const payload = {
+        use_analysis_template: false,
+        template_id: document.getElementById('reply-template-select').value || null,
+        subject: document.getElementById('reply-subject').value,
+        body: document.getElementById('reply-body').value
+    };
+    try {
+        await apiRequest(`/api/emails/${currentEmailId}/reply`, { method: 'POST', body: JSON.stringify(payload) });
+        closeReplyModal();
+        showAlert('回复已发送', 'success');
+        showEmailDetail(currentEmailId);
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+function fetchEmails() {
+    document.getElementById('fetch-modal').classList.add('active');
+}
+
+function closeFetchModal() {
+    document.getElementById('fetch-modal').classList.remove('active');
+}
+
+async function doFetchEmails() {
+    const limit = parseInt(document.getElementById('fetch-limit').value);
+    const autoAnalyze = document.getElementById('fetch-auto-analyze').checked;
+    const btn = document.getElementById('btn-do-fetch');
+    
+    btn.disabled = true;
+    btn.textContent = '收取中...';
+    
+    try {
+        const result = await apiRequest('/api/fetch-emails', {
+            method: 'POST',
+            body: JSON.stringify({ limit: limit, auto_analyze: autoAnalyze })
+        });
+        closeFetchModal();
+        showAlert(result.message || '收取完成', 'success');
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '开始收取';
+    }
+}
+
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.email-checkbox');
+    checkboxes.forEach(cb => { cb.checked = checkbox.checked; });
+    updateBatchActions();
+}
+
+function updateBatchActions() {
+    const checkboxes = document.querySelectorAll('.email-checkbox:checked');
+    const count = checkboxes.length;
+    document.getElementById('selected-count').textContent = count;
+    const batchActions = document.getElementById('batch-actions');
+    if (count > 0) {
+        batchActions.style.display = 'flex';
+    } else {
+        batchActions.style.display = 'none';
+    }
+    const selectAll = document.getElementById('select-all');
+    const allBoxes = document.querySelectorAll('.email-checkbox');
+    selectAll.checked = allBoxes.length > 0 && count === allBoxes.length;
+    selectAll.indeterminate = count > 0 && count < allBoxes.length;
+}
+
+function getSelectedIds() {
+    const checkboxes = document.querySelectorAll('.email-checkbox:checked');
+    return Array.from(checkboxes).map(cb => parseInt(cb.value));
+}
+
+function clearSelection() {
+    const checkboxes = document.querySelectorAll('.email-checkbox');
+    checkboxes.forEach(cb => { cb.checked = false; });
+    document.getElementById('select-all').checked = false;
+    updateBatchActions();
+}
+
+async function batchAnalyze() {
+    const ids = getSelectedIds();
+    if (ids.length === 0) {
+        showAlert('请先选择要分析的邮件', 'error');
+        return;
+    }
+    if (!confirm(`确认对 ${ids.length} 封邮件进行批量AI分析？`)) return;
+
+    try {
+        const result = await apiRequest('/api/emails/batch-analyze', {
+            method: 'POST',
+            body: JSON.stringify({ email_ids: ids })
+        });
+        showAlert(result.message, 'success');
+        clearSelection();
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function batchReply() {
+    const ids = getSelectedIds();
+    if (ids.length === 0) {
+        showAlert('请先选择要回复的邮件', 'error');
+        return;
+    }
+    if (!confirm(`确认对 ${ids.length} 封已分析邮件进行批量回复？`)) return;
+
+    try {
+        const result = await apiRequest('/api/emails/batch-reply', {
+            method: 'POST',
+            body: JSON.stringify({ email_ids: ids, use_analysis_template: true })
+        });
+        showAlert(result.message, 'success');
+        clearSelection();
+        loadEmails();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+function cleanEmailBody(body) {
+    if (!body) return '';
+    let lines = body.split('\n');
+    let result = [];
+    let emptyCount = 0;
+    for (let line of lines) {
+        if (line.trim() === '') {
+            emptyCount++;
+            if (emptyCount <= 1) {
+                result.push('');
+            }
+        } else {
+            emptyCount = 0;
+            result.push(line.trim());
+        }
+    }
+    return result.join('\n');
+}
+
+function decodeRFC2047(text) {
+    if (!text) return text;
+    let decoded = text;
+    let prev;
+    do {
+        prev = decoded;
+        decoded = decoded.replace(/=\?([^?]+)\?([BQ])\?([^?]+)\?=/gi, function(match, charset, encoding, encoded) {
+            try {
+                if (encoding.toUpperCase() === 'B') {
+                    const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                } else {
+                    let qp = encoded.replace(/_/g, ' ');
+                    qp = qp.replace(/=([0-9A-F]{2})/gi, function(m, hex) {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    });
+                    const bytes = Uint8Array.from(qp.split('').map(c => c.charCodeAt(0)));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                }
+            } catch (e) {
+                return match;
+            }
+        });
+    } while (decoded !== prev);
+    return decoded;
+}
+
+function downloadEml(id) {
+    const link = document.createElement('a');
+    link.href = `/api/emails/${id}/download`;
+    link.download = `email_${id}.eml`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+let currentTab = 'inbox';
+let sentCurrentPage = 1;
+
+function switchTab(tab) {
+    currentTab = tab;
+    const exportBtn = document.getElementById('btn-export-emails');
+    if (tab === 'inbox') {
+        document.getElementById('tab-inbox').className = 'btn btn-primary';
+        document.getElementById('tab-sent').className = 'btn btn-secondary';
+        document.getElementById('inbox-header').style.display = 'block';
+        document.getElementById('sent-header').style.display = 'none';
+        document.getElementById('inbox-content').style.display = 'block';
+        document.getElementById('sent-content').style.display = 'none';
+        if (exportBtn) exportBtn.style.display = currentUser.role === 'admin' ? 'inline-flex' : 'none';
+        loadEmails();
+    } else {
+        document.getElementById('tab-inbox').className = 'btn btn-secondary';
+        document.getElementById('tab-sent').className = 'btn btn-primary';
+        document.getElementById('inbox-header').style.display = 'none';
+        document.getElementById('sent-header').style.display = 'block';
+        document.getElementById('inbox-content').style.display = 'none';
+        document.getElementById('sent-content').style.display = 'block';
+        if (exportBtn) exportBtn.style.display = 'none';
+        sentCurrentPage = 1;
+        loadSentEmails();
+    }
+}
+
+async function loadSentEmails() {
+    try {
+        const data = await apiRequest(`/api/sent-emails?page=${sentCurrentPage}`);
+        const tbody = document.querySelector('#sent-emails-table tbody');
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:40px;">暂无已发送邮件</td></tr>';
+            document.getElementById('sent-pagination').innerHTML = '';
+            return;
+        }
+        tbody.innerHTML = data.items.map(e => {
+            let statusBadge = e.status === 'sent' 
+                ? '<span class="badge" style="background:rgba(0,255,136,0.2);color:#00ff88;">发送成功</span>'
+                : '<span class="badge" style="background:rgba(255,107,107,0.2);color:#ff6b6b;">发送失败</span>';
+            let originalInfo = e.original_subject ? `<span style="color:var(--text-muted);font-size:12px;">回复: ${e.original_subject}</span>` : '';
+            let toName = e.reply_to || '';
+            let toAddr = '';
+            const toMatch = toName.match(/(.*?)\s*<(.+?)>/);
+            if (toMatch) {
+                toName = toMatch[1].trim().replace(/^["']|["']$/g, '');
+                toAddr = toMatch[2].trim();
+            } else if (toName.includes('@')) {
+                toAddr = toName;
+                toName = '';
+            }
+            return `<tr data-id="${e.id}">
+                <td>${toName || '-'}</td>
+                <td>${toAddr || '-'}</td>
+                <td>${e.subject || '(无主题)'}</td>
+                <td>${originalInfo}</td>
+                <td>${formatDate(e.sent_at)}</td>
+                <td>${statusBadge}</td>
+                <td style="display:flex;gap:6px;">
+                    <button class="btn btn-sm btn-secondary" onclick="showSentEmailDetail(${e.id})">查看</button>
+                    <button class="btn btn-sm btn-success" onclick="downloadSentEml(${e.id})">导出EML</button>
+                </td>
+            </tr>`;
+        }).join('');
+        
+        let pagesHtml = '';
+        pagesHtml += `<button ${sentCurrentPage === 1 ? 'disabled' : ''} onclick="sentGoPage(1)">首页</button>`;
+        pagesHtml += `<button ${sentCurrentPage === 1 ? 'disabled' : ''} onclick="sentGoPage(${sentCurrentPage - 1})">上一页</button>`;
+        for (let i = Math.max(1, sentCurrentPage - 2); i <= Math.min(data.pages, sentCurrentPage + 2); i++) {
+            pagesHtml += `<button ${i === sentCurrentPage ? 'class="active"' : ''} onclick="sentGoPage(${i})">${i}</button>`;
+        }
+        pagesHtml += `<button ${sentCurrentPage === data.pages ? 'disabled' : ''} onclick="sentGoPage(${sentCurrentPage + 1})">下一页</button>`;
+        pagesHtml += `<button ${sentCurrentPage === data.pages ? 'disabled' : ''} onclick="sentGoPage(${data.pages})">末页</button>`;
+        document.getElementById('sent-pagination').innerHTML = pagesHtml;
+    } catch (e) {
+        showAlert('加载已发送邮件失败: ' + e.message, 'error');
+    }
+}
+
+function sentGoPage(page) {
+    sentCurrentPage = page;
+    loadSentEmails();
+}
+
+async function showSentEmailDetail(id) {
+    try {
+        const email = await apiRequest(`/api/sent-emails/${id}`);
+        let html = `
+            <div class="email-meta">
+                <div class="email-meta-item"><strong>发件人:</strong> ${email.from_email || '-'}</div>
+                <div class="email-meta-item"><strong>收件人:</strong> ${email.reply_to}</div>
+                <div class="email-meta-item"><strong>主题:</strong> ${email.subject || '(无主题)'}</div>
+                <div class="email-meta-item"><strong>发送时间:</strong> ${formatDate(email.sent_at)}</div>
+                <div class="email-meta-item"><strong>状态:</strong> ${email.status === 'sent' ? '<span style="color:#00ff88;">发送成功</span>' : '<span style="color:#ff6b6b;">发送失败</span>'}</div>
+            </div>
+            <div class="email-body">${email.body || '(无正文)'}</div>
+        `;
+        document.getElementById('email-detail-body').innerHTML = html;
+        document.getElementById('email-detail-modal').classList.add('active');
+    } catch (e) {
+        showAlert('加载邮件详情失败: ' + e.message, 'error');
+    }
+}
+
+function downloadSentEml(id) {
+    const link = document.createElement('a');
+    link.href = `/api/sent-emails/${id}/download`;
+    link.download = `sent_email_${id}.eml`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+async function syncSentEmails() {
+    try {
+        showAlert('正在同步邮箱发件箱...', 'info');
+        const result = await apiRequest('/api/sent-emails/sync', { method: 'POST' });
+        if (result.success) {
+            showAlert(result.message, 'success');
+            sentCurrentPage = 1;
+            loadSentEmails();
+        } else if (result.unsafe_login) {
+            showAlert(result.message, 'warning');
+        } else {
+            showAlert(result.message, 'error');
+        }
+    } catch (e) {
+        if (e.message && e.message.includes('Unsafe Login')) {
+            showAlert('网易邮箱安全策略限制：无法访问发件箱文件夹。\n\n这是163邮箱的服务器端策略，代码无法绕过。\n✓ 收件箱同步正常\n✓ SMTP发送邮件正常\n✗ 发件箱同步暂时不可用\n\n建议：手动访问163网页邮箱查看已发送邮件，或使用其他邮箱服务商。', 'warning');
+        } else {
+            showAlert('同步失败: ' + e.message, 'error');
+        }
+    }
+}
+
+let correctingEmailId = null;
+
+async function showCorrectModal(emailId) {
+    correctingEmailId = emailId;
+    try {
+        const email = await apiRequest('/api/emails/' + emailId);
+        document.getElementById('correct-email-info').innerHTML = `
+            <div><strong>主题:</strong> ${email.subject || '(无主题)'}</div>
+            <div><strong>发件人:</strong> ${email.from_email || '-'}</div>
+            <div><strong>收到时间:</strong> ${email.received_at || '-'}</div>
+        `;
+        
+        if (email.analysis) {
+            const resultText = email.analysis.is_phishing ? '钓鱼邮件' : '正常邮件';
+            const riskLevel = { 'high': '高危', 'medium': '中危', 'low': '低危' }[email.analysis.risk_level] || email.analysis.risk_level;
+            document.getElementById('correct-original-result').innerHTML = `
+                <div><strong>判定:</strong> <span style="color:${email.analysis.is_phishing ? '#ff6b6b' : '#00ff88'}">${resultText}</span></div>
+                <div><strong>等级:</strong> ${riskLevel || '-'} &nbsp;|&nbsp; <strong>置信度:</strong> ${(email.analysis.confidence * 100).toFixed(0)}%</div>
+                <div><strong>类型:</strong> ${email.analysis.phishing_type || '-'}</div>
+            `;
+            
+            const origIsPhishing = email.analysis.is_phishing === true || email.analysis.is_phishing === 'true';
+            const defaultValue = origIsPhishing ? 'false' : 'true';
+            document.querySelector('input[name="correct-is-phishing"][value="' + defaultValue + '"]').checked = true;
+            document.getElementById('correct-risk-level').value = email.analysis.risk_level || 'medium';
+            document.getElementById('correct-phishing-type').value = email.analysis.phishing_type || '';
+        }
+        
+        document.getElementById('correct-reason').value = '';
+        document.getElementById('correct-modal').classList.add('active');
+    } catch (e) {
+        showAlert('加载邮件信息失败: ' + e.message, 'error');
+    }
+}
+
+function closeCorrectModal() {
+    document.getElementById('correct-modal').classList.remove('active');
+    correctingEmailId = null;
+}
+
+async function submitCorrection() {
+    if (!correctingEmailId) return;
+    
+    const isPhishing = document.querySelector('input[name="correct-is-phishing"]:checked').value === 'true';
+    const riskLevel = document.getElementById('correct-risk-level').value;
+    const phishingType = document.getElementById('correct-phishing-type').value;
+    const reason = document.getElementById('correct-reason').value;
+    
+    const btn = document.querySelector('#correct-modal .btn-warning');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading"></span> 提交中...';
+    btn.disabled = true;
+    
+    try {
+        const result = await apiRequest('/api/emails/' + correctingEmailId + '/correct', {
+            method: 'POST',
+            body: JSON.stringify({
+                is_phishing: isPhishing,
+                risk_level: riskLevel,
+                phishing_type: phishingType,
+                reason: reason
+            })
+        });
+        
+        if (result.success) {
+            showAlert(result.message, 'success');
+            closeCorrectModal();
+            loadEmails();
+        } else {
+            showAlert(result.error || '纠错失败', 'error');
+        }
+    } catch (e) {
+        showAlert('纠错失败: ' + e.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+loadEmails();
+loadTemplates();
+</script>
+{% endblock %}

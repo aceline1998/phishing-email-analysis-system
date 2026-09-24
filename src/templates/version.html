@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}版本管理 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">版本管理</span>
+        <button class="btn btn-primary" onclick="showAddModal()">新增版本</button>
+    </div>
+    
+    <div id="current-version" style="padding:20px;border-bottom:1px solid var(--border-color);">
+        <h3 style="margin-bottom:16px;color:var(--primary);">当前版本</h3>
+        <div id="current-version-content">
+            <div style="display:flex;align-items:center;gap:20px;">
+                <div style="font-size:28px;font-weight:bold;color:var(--primary);">V1.0</div>
+                <div style="flex:1;">
+                    <div style="color:var(--text-secondary);">更新内容:</div>
+                    <div style="color:var(--text-primary);margin-top:4px;">加载中...</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="editVersion(0)">编辑</button>
+            </div>
+        </div>
+    </div>
+
+    <div style="padding:20px;">
+        <h3 style="margin-bottom:16px;">版本历史</h3>
+        <table class="table" id="versions-table">
+            <thead>
+                <tr><th>版本号</th><th>更新内容</th><th>发布日期</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay" id="version-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="modal-title">新增版本</span>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">版本号</label>
+                <input type="text" class="form-input" id="version-input" placeholder="如: V1.1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">更新内容</label>
+                <textarea class="form-textarea" id="update-content-input" rows="4" placeholder="请输入更新内容"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" id="is-active-input" checked> 设为当前版本
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveVersion()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var currentEditingId = null;
+
+function initVersionPage() {
+    loadCurrentVersion();
+    loadVersions();
+}
+
+function loadCurrentVersion() {
+    apiRequest('/api/version').then(data => {
+        currentEditingId = data.id;
+        document.getElementById('current-version-content').innerHTML = `
+            <div style="display:flex;align-items:center;gap:20px;">
+                <div style="font-size:28px;font-weight:bold;color:var(--primary);">${data.version}</div>
+                <div style="flex:1;">
+                    <div style="color:var(--text-secondary);">更新内容:</div>
+                    <div style="color:var(--text-primary);margin-top:4px;">${data.update_content || '无'}</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="editVersion(${data.id})">编辑</button>
+            </div>
+        `;
+    });
+}
+
+function loadVersions() {
+    apiRequest('/api/versions').then(data => {
+        const tbody = document.getElementById('versions-table').querySelector('tbody');
+        tbody.innerHTML = data.map(v => `
+            <tr>
+                <td><strong>${v.version}</strong></td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${v.update_content || '-'}</td>
+                <td>${v.release_date ? v.release_date.split(' ')[0] : '-'}</td>
+                <td>${v.is_active ? '<span class="badge badge-success">当前版本</span>' : '<span class="badge badge-pending">历史版本</span>'}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="editVersion(${v.id})">编辑</button>
+                </td>
+            </tr>
+        `).join('');
+    });
+}
+
+function showAddModal() {
+    currentEditingId = null;
+    document.getElementById('modal-title').textContent = '新增版本';
+    document.getElementById('version-input').value = '';
+    document.getElementById('update-content-input').value = '';
+    document.getElementById('is-active-input').checked = true;
+    document.getElementById('version-modal').classList.add('active');
+}
+
+function editVersion(id) {
+    apiRequest('/api/versions').then(data => {
+        const version = data.find(v => v.id === id);
+        if (version) {
+            currentEditingId = id;
+            document.getElementById('modal-title').textContent = '编辑版本';
+            document.getElementById('version-input').value = version.version;
+            document.getElementById('update-content-input').value = version.update_content || '';
+            document.getElementById('is-active-input').checked = version.is_active;
+            document.getElementById('version-modal').classList.add('active');
+        }
+    });
+}
+
+function closeModal() {
+    document.getElementById('version-modal').classList.remove('active');
+}
+
+function saveVersion() {
+    const version = document.getElementById('version-input').value.trim();
+    if (!version) {
+        showAlert('请输入版本号', 'error');
+        return;
+    }
+
+    const data = {
+        version: version,
+        update_content: document.getElementById('update-content-input').value.trim(),
+        is_active: document.getElementById('is-active-input').checked
+    };
+
+    let url = '/api/versions';
+    let method = 'POST';
+
+    if (currentEditingId) {
+        url = `/api/versions/${currentEditingId}`;
+        method = 'PUT';
+    }
+
+    apiRequest(url, {
+        method: method,
+        body: JSON.stringify(data)
+    }).then(() => {
+        showAlert('版本信息保存成功', 'success');
+        closeModal();
+        loadCurrentVersion();
+        loadVersions();
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initVersionPage);
+} else {
+    initVersionPage();
+}
+</script>
+{% endblock %}

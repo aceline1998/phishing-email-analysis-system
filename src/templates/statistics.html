@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}统计分析 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+    <div class="card-header">
+        <span class="card-title">操作</span>
+    </div>
+    <div style="padding:20px;display:flex;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="exportReport('summary')">导出汇总报告</button>
+        <button class="btn btn-success" onclick="exportReport('detail')">导出详细报告</button>
+        <button class="btn btn-secondary" onclick="printReport()">打印报告</button>
+    </div>
+</div>
+
+<div id="report-content">
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">邮件总量</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-phishing" style="color:#c62828">0</div>
+        <div class="stat-label">钓鱼邮件</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-normal" style="color:#2e7d32">0</div>
+        <div class="stat-label">正常邮件</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-rate" style="color:#e65100">0%</div>
+        <div class="stat-label">钓鱼邮件占比</div>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-pending" style="color:#ff9800">0</div>
+        <div class="stat-label">待处理</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-analyzed" style="color:#2196f3">0</div>
+        <div class="stat-label">已分析</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-replied" style="color:#9c27b0">0</div>
+        <div class="stat-label">已回复</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-confidence" style="color:#00bcd4">0%</div>
+        <div class="stat-label">平均置信度</div>
+    </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-mail-server" style="color:#00d4ff">0</div>
+        <div class="stat-label">邮件服务器接收</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-import" style="color:#ff5722">0</div>
+        <div class="stat-label">离线导入</div>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+    <div class="card">
+        <div class="card-header"><span class="card-title">钓鱼手法分类统计</span></div>
+        <div id="phishing-types-chart" style="min-height:200px;"></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><span class="card-title">风险等级分布</span></div>
+        <div id="risk-levels-chart" style="min-height:200px;"></div>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+    <div class="card">
+        <div class="card-header"><span class="card-title">TOP 恶意发件人域名</span></div>
+        <div id="top-senders-chart" style="min-height:200px;"></div>
+    </div>
+    <div class="card">
+        <div class="card-header"><span class="card-title">TOP 恶意发件人邮箱</span></div>
+        <div id="top-sender-emails-chart" style="min-height:200px;"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-title">每日邮件趋势</span></div>
+    <div id="daily-trend-chart" style="min-height:250px;"></div>
+</div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let statisticsData = {};
+
+async function loadStatistics() {
+    try {
+        const data = await apiRequest('/api/statistics');
+        statisticsData = data;
+        document.getElementById('stat-total').textContent = data.total_emails;
+        document.getElementById('stat-phishing').textContent = data.phishing_count;
+        document.getElementById('stat-normal').textContent = data.normal_count;
+        document.getElementById('stat-rate').textContent = `${data.phishing_rate.toFixed(1)}%`;
+        document.getElementById('stat-pending').textContent = data.pending_count;
+        document.getElementById('stat-analyzed').textContent = data.analyzed_count;
+        document.getElementById('stat-replied').textContent = data.replied_count;
+        document.getElementById('stat-confidence').textContent = `${(data.avg_confidence * 100).toFixed(1)}%`;
+        
+        if (data.source_stats) {
+            document.getElementById('stat-mail-server').textContent = data.source_stats.mail_server || 0;
+            document.getElementById('stat-import').textContent = data.source_stats.import || 0;
+        }
+
+        renderTypesChart(data.phishing_types, 'phishing-types-chart');
+        renderRiskChart(data.risk_levels, 'risk-levels-chart');
+        renderSendersChart(data.top_senders, 'top-senders-chart');
+        renderSendersChart(data.top_sender_emails, 'top-sender-emails-chart');
+        renderTrendChart(data.daily_trend);
+    } catch (e) {
+        showAlert('加载统计数据失败: ' + e.message, 'error');
+    }
+}
+
+function exportReport(type) {
+    window.open('/api/export-report?type=' + type, '_blank');
+}
+
+function printReport() {
+    window.print();
+}
+
+function renderTypesChart(data, elementId) {
+    const container = document.getElementById(elementId);
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:#888;">暂无数据</div>';
+        return;
+    }
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    const total = sorted.reduce((sum, [, count]) => sum + count, 0);
+    
+    let html = '';
+    sorted.forEach(([type, count], index) => {
+        const percent = total > 0 ? (count / total * 100).toFixed(1) : 0;
+        const colors = ['#c62828', '#e65100', '#ff9800', '#2e7d32', '#1565c0', '#4527a0'];
+        const color = colors[index % colors.length];
+        html += `
+            <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">${type}</span>
+                    <span style="font-size:13px;font-weight:600;color:${color};">${count} (${percent}%)</span>
+                </div>
+                <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                    <div style="height:100%;width:${percent}%;background:${color};border-radius:3px;transition:width 0.5s ease;"></div>
+                </div>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function renderRiskChart(data, elementId) {
+    const container = document.getElementById(elementId);
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:#888;">暂无数据</div>';
+        return;
+    }
+    const colorMap = { 'high': '#c62828', 'medium': '#e65100', 'low': '#2e7d32' };
+    const levelNames = { 'high': '高危', 'medium': '中危', 'low': '低危' };
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    const total = sorted.reduce((sum, [, count]) => sum + count, 0);
+    
+    let html = '';
+    sorted.forEach(([level, count]) => {
+        const percent = total > 0 ? (count / total * 100).toFixed(1) : 0;
+        const color = colorMap[level] || '#333';
+        html += `
+            <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">${levelNames[level] || level}</span>
+                    <span style="font-size:13px;font-weight:600;color:${color};">${count} (${percent}%)</span>
+                </div>
+                <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                    <div style="height:100%;width:${percent}%;background:${color};border-radius:3px;transition:width 0.5s ease;"></div>
+                </div>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function renderSendersChart(data, elementId) {
+    const container = document.getElementById(elementId);
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:#888;">暂无数据</div>';
+        return;
+    }
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const maxCount = sorted[0][1];
+    
+    let html = '';
+    sorted.forEach(([sender, count], index) => {
+        const percent = maxCount > 0 ? (count / maxCount * 100).toFixed(0) : 0;
+        const rankColors = ['#ffd700', '#c0c0c0', '#cd7f32', '#00d4ff', '#00ff88'];
+        const rankColor = rankColors[index] || '#888';
+        html += `
+            <div style="display:flex;align-items:center;margin-bottom:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+                <span style="width:24px;text-align:center;font-size:12px;font-weight:600;color:${rankColor};">${index + 1}</span>
+                <span style="flex:1;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-secondary);" title="${sender}">${sender}</span>
+                <div style="width:80px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;margin:0 8px;">
+                    <div style="height:100%;width:${percent}%;background:#00d4ff;border-radius:2px;"></div>
+                </div>
+                <span style="width:30px;text-align:right;font-size:13px;font-weight:600;color:#00d4ff;">${count}</span>
+            </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function renderTrendChart(data) {
+    const container = document.getElementById('daily-trend-chart');
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无数据</div>';
+        return;
+    }
+    const sortedDates = Object.keys(data).sort();
+    const maxCount = Math.max(...sortedDates.map(d => data[d].total));
+    
+    let chartHtml = '<div style="display:flex;align-items:flex-end;height:200px;gap:4px;padding:20px;">';
+    sortedDates.forEach(date => {
+        const dayData = data[date];
+        const totalHeight = maxCount > 0 ? (dayData.total / maxCount) * 150 : 0;
+        const phishingHeight = maxCount > 0 ? (dayData.phishing / maxCount) * 150 : 0;
+        const normalHeight = totalHeight - phishingHeight;
+        
+        chartHtml += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;">
+            <div style="display:flex;flex-direction:column-reverse;width:100%;max-width:40px;">
+                ${phishingHeight > 0 ? `<div style="background:#c62828;width:100%;height:${phishingHeight}px;border-radius:2px 2px 0 0;" title="钓鱼邮件: ${dayData.phishing}"></div>` : ''}
+                ${normalHeight > 0 ? `<div style="background:#2e7d32;width:100%;height:${normalHeight}px;border-radius:0 0 2px 2px;" title="正常邮件: ${dayData.total - dayData.phishing}"></div>` : ''}
+            </div>
+            <div style="font-size:10px;color:#888;margin-top:8px;transform:rotate(-30deg);white-space:nowrap;">${date.slice(5)}</div>
+        </div>`;
+    });
+    chartHtml += '</div>';
+    
+    chartHtml += `<div style="display:flex;gap:20px;justify-content:center;margin-top:10px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:16px;height:16px;background:#c62828;border-radius:2px;"></div>
+            <span style="font-size:12px;color:#666;">钓鱼邮件</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:16px;height:16px;background:#2e7d32;border-radius:2px;"></div>
+            <span style="font-size:12px;color:#666;">正常邮件</span>
+        </div>
+    </div>`;
+    
+    container.innerHTML = chartHtml;
+}
+
+loadStatistics();
+</script>
+{% endblock %}

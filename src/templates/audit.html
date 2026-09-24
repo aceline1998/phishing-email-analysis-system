@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}审计日志 - 钓鱼邮件智能分析系统{% endblock %}
+{% block extra_css %}
+<style>
+    .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px; }
+    .filter-bar .form-group { margin-bottom: 0; }
+    .audit-table { width: 100%; border-collapse: collapse; }
+    .audit-table th, .audit-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+    .audit-table th { background: rgba(255,255,255,0.03); color: var(--text-secondary); font-weight: 600; }
+    .audit-table tr:hover { background: rgba(255,255,255,0.03); }
+    .type-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .type-tag.login { background: rgba(0,212,255,0.15); color: #00d4ff; }
+    .type-tag.logout { background: rgba(255,152,0,0.15); color: #ff9800; }
+    .type-tag.config { background: rgba(156,39,176,0.15); color: #9c27b0; }
+    .type-tag.email { background: rgba(76,175,80,0.15); color: #4caf50; }
+    .type-tag.analysis { background: rgba(244,67,54,0.15); color: #f44336; }
+    .type-tag.user { background: rgba(33,150,243,0.15); color: #2196f3; }
+    .type-tag.intel { background: rgba(255,87,34,0.15); color: #ff5722; }
+    .detail-popup { display: none; position: absolute; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; max-width: 300px; z-index: 100; font-size: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">审计日志</span>
+        <button class="btn btn-primary" onclick="exportLogs()" style="height:36px;padding:0 14px;font-size:14px;">导出日志</button>
+    </div>
+    <div class="filter-bar">
+        <div class="form-group">
+            <label class="form-label">用户名</label>
+            <input type="text" class="form-input" id="username-filter" placeholder="搜索用户名" style="height:36px;padding:0 10px;font-size:14px;">
+        </div>
+        <div class="form-group">
+            <label class="form-label">操作类型</label>
+            <select class="form-select" id="action-type-filter" style="height:36px;padding:0 10px;font-size:14px;">
+                <option value="">全部类型</option>
+                <option value="login">登录</option>
+                <option value="logout">退出</option>
+                <option value="config">配置管理</option>
+                <option value="email">邮件操作</option>
+                <option value="analysis">分析操作</option>
+                <option value="user">用户管理</option>
+                <option value="intel">情报查询</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">开始日期</label>
+            <input type="date" class="form-input" id="start-date" style="height:36px;padding:0 10px;font-size:14px;">
+        </div>
+        <div class="form-group">
+            <label class="form-label">结束日期</label>
+            <input type="date" class="form-input" id="end-date" style="height:36px;padding:0 10px;font-size:14px;">
+        </div>
+        <button class="btn btn-primary" onclick="loadLogs(1)" style="height:36px;padding:0 14px;font-size:14px;">查询</button>
+        <button class="btn btn-secondary" onclick="clearFilters()" style="height:36px;padding:0 14px;font-size:14px;">清空</button>
+    </div>
+    <table class="audit-table">
+        <thead>
+            <tr>
+                <th>时间</th>
+                <th>用户名</th>
+                <th>操作类型</th>
+                <th>操作描述</th>
+                <th>资源</th>
+                <th>IP地址</th>
+            </tr>
+        </thead>
+        <tbody id="logs-tbody"></tbody>
+    </table>
+    <div class="pagination" id="pagination"></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function clearFilters() {
+    document.getElementById('username-filter').value = '';
+    document.getElementById('action-type-filter').value = '';
+    document.getElementById('start-date').value = '';
+    document.getElementById('end-date').value = '';
+    loadLogs(1);
+}
+
+async function loadLogs(page) {
+    const username = document.getElementById('username-filter').value;
+    const actionType = document.getElementById('action-type-filter').value;
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    
+    let url = `/api/audit-logs?page=${page}&per_page=20`;
+    if (username) url += `&username=${encodeURIComponent(username)}`;
+    if (actionType) url += `&action_type=${actionType}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    
+    try {
+        const data = await apiRequest(url);
+        const tbody = document.getElementById('logs-tbody');
+        
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">暂无日志记录</td></tr>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+        
+        const typeLabels = {
+            'login': '登录', 'logout': '退出', 'config': '配置',
+            'email': '邮件', 'analysis': '分析', 'user': '用户', 'intel': '情报',
+            'update': '更新', 'create': '创建', 'batch_update': '批量更新'
+        };
+        
+        tbody.innerHTML = data.items.map(log => `
+            <tr>
+                <td>${log.created_at || '-'}</td>
+                <td style="color:var(--primary);font-weight:600;">${log.username || '-'}</td>
+                <td><span class="type-tag ${log.action_type}">${typeLabels[log.action_type] || log.action_type}</span></td>
+                <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${log.action}">${log.action}</td>
+                <td style="color:var(--text-muted);font-size:12px;">${log.resource || '-'}</td>
+                <td style="font-family:monospace;font-size:12px;">${log.ip_address || '-'}</td>
+            </tr>
+        `).join('');
+        
+        renderPagination(data.pages, data.page, 'pagination', loadLogs);
+    } catch (e) {
+        showAlert('加载日志失败: ' + e.message, 'error');
+    }
+}
+
+function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function exportLogs() {
+    const username = document.getElementById('username-filter').value;
+    const actionType = document.getElementById('action-type-filter').value;
+    const startDate = document.getElementById('start-date').value;
+    const endDate = document.getElementById('end-date').value;
+    
+    let url = '/api/audit-logs/export';
+    const params = [];
+    if (username) params.push(`username=${encodeURIComponent(username)}`);
+    if (actionType) params.push(`action_type=${actionType}`);
+    if (startDate) params.push(`start_date=${startDate}`);
+    if (endDate) params.push(`end_date=${endDate}`);
+    if (params.length > 0) url += '?' + params.join('&');
+    
+    window.open(url, '_blank');
+}
+
+function renderPagination(totalPages, currentPage, containerId, callback) {
+    const container = document.getElementById(containerId);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    let html = `<button onclick="${callback.name}(1)" ${currentPage === 1 ? 'disabled' : ''}>首页</button>`;
+    html += `<button onclick="${callback.name}(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
+    
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, currentPage + 2);
+    for (let i = start; i <= end; i++) {
+        html += `<button class="${i === currentPage ? 'active' : ''}" onclick="${callback.name}(${i})">${i}</button>`;
+    }
+    
+    html += `<button onclick="${callback.name}(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>`;
+    html += `<button onclick="${callback.name}(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>末页</button>`;
+    
+    container.innerHTML = html;
+}
+
+loadLogs(1);
+</script>
+{% endblock %}

@@ -1,0 +1,553 @@
+{% extends "base.html" %}
+{% block title %}首页 - 钓鱼邮件智能分析系统{% endblock %}
+{% block extra_css %}
+<style>
+    .time-range-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; }
+    .time-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: var(--text-secondary); cursor: pointer; font-size: 13px; transition: all 0.3s; }
+    .time-btn.active { background: var(--primary); border-color: var(--primary); color: #000; box-shadow: 0 0 15px rgba(0,212,255,0.4); }
+    .time-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .stat-card { position: relative; overflow: hidden; }
+    .stat-card .stat-icon { position: absolute; top: 10px; right: 10px; font-size: 36px; opacity: 0.1; }
+    .alerts-bar { background: rgba(255,71,87,0.1); border-left: 3px solid #ff6b6b; padding: 12px 16px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; border-radius: 0 8px 8px 0; }
+    .alerts-bar .alert-icon { color: #ff6b6b; font-size: 18px; }
+    .alerts-bar .alert-text { flex: 1; color: var(--text-secondary); font-size: 13px; }
+    .alerts-bar.success { background: rgba(0,255,136,0.1); border-left-color: #00ff88; }
+    .alerts-bar.success .alert-icon { color: #00ff88; }
+    .chart-container { height: 300px; position: relative; overflow: hidden; }
+    .chart-container svg { display: block; }
+    .chart-card { padding-bottom: 0 !important; }
+    .chart-card .card-header { margin-bottom: 12px; }
+    .empty-state { text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 13px; }
+    .pie-chart { width: 100%; height: 220px; position: relative; }
+    .pie-legend { margin-top: 12px; }
+    .pie-legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+    .pie-legend-color { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .bar-chart { height: 200px; display: flex; align-items: flex-end; justify-content: space-around; padding: 20px 0 10px; }
+    .bar-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .bar-value { width: 28px; background: linear-gradient(180deg, var(--primary), rgba(0,212,255,0.3)); border-radius: 4px 4px 0 0; transition: height 0.5s ease; position: relative; min-height: 2px; }
+    .bar-value::before { content: attr(data-value); position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+    .bar-label { font-size: 10px; color: var(--text-muted); margin-top: 6px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .risk-level-bar { display: flex; gap: 8px; margin-top: 12px; }
+    .risk-level-item { flex: 1; text-align: center; padding: 12px 8px; border-radius: 8px; background: rgba(255,255,255,0.03); }
+    .risk-level-item .risk-count { font-size: 24px; font-weight: bold; margin-bottom: 4px; }
+    .risk-level-item .risk-label { font-size: 12px; color: var(--text-muted); }
+    .risk-level-item.high .risk-count { color: #ff6b6b; }
+    .risk-level-item.medium .risk-count { color: #ff9800; }
+    .risk-level-item.low .risk-count { color: #00ff88; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="time-range-bar">
+    <span style="color:var(--text-muted);font-size:13px;">时间范围:</span>
+    <button class="time-btn active" onclick="setTimeRange('')">全部</button>
+    <button class="time-btn" onclick="setTimeRange('7days')">近7天</button>
+    <button class="time-btn" onclick="setTimeRange('30days')">近30天</button>
+    <div style="margin-left:auto;display:flex;gap:12px;">
+        <button class="btn btn-primary btn-sm" onclick="exportReport()">导出报告</button>
+    </div>
+</div>
+
+<div class="alerts-bar" id="alert-bar">
+    <span class="alert-icon">⚠</span>
+    <span class="alert-text" id="alert-message">暂无威胁告警</span>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(5, 1fr); gap: 24px;">
+    <div class="stat-card">
+        <div class="stat-icon">📧</div>
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">邮件总量</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🎣</div>
+        <div class="stat-value" id="stat-phishing" style="color:#ff6b6b;">0</div>
+        <div class="stat-label">钓鱼邮件</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">✓</div>
+        <div class="stat-value" id="stat-normal" style="color:#00ff88;">0</div>
+        <div class="stat-label">正常邮件</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">⏳</div>
+        <div class="stat-value" id="stat-pending" style="color:#ff9800;">0</div>
+        <div class="stat-label">待处理</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">📤</div>
+        <div class="stat-value" id="stat-replied" style="color:#00bcd4;">0</div>
+        <div class="stat-label">已回复</div>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:20px;">
+    <div class="card chart-card">
+        <div class="card-header">
+            <span class="card-title">邮件趋势分析</span>
+        </div>
+        <div class="chart-container" id="trend-chart"></div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header"><span class="card-title">风险等级分布</span></div>
+        <div id="risk-levels"></div>
+    </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px;">
+    <div class="card">
+        <div class="card-header"><span class="card-title">钓鱼类型分布</span></div>
+        <div class="pie-chart" id="phishing-types-chart"></div>
+        <div class="pie-legend" id="phishing-types-legend"></div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header"><span class="card-title">TOP发件域名</span></div>
+        <div class="bar-chart" id="top-senders-chart"></div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header"><span class="card-title">处理效率</span></div>
+        <div id="processing-stats"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">最近邮件</span>
+        <button class="btn btn-sm btn-primary" onclick="window.location.href='/analysis-records'">查看全部</button>
+    </div>
+    <table class="table" id="recent-emails-table">
+        <thead>
+            <tr><th>发件人</th><th>主题</th><th>判定结果</th><th>风险等级</th><th>收到时间</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="card" style="margin-top:24px;">
+    <div class="card-header">
+        <span class="card-title">系统健康监测</span>
+        <span id="monitor-timestamp" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+    <div id="monitor-panel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px;"></div>
+
+    <div style="border-top:1px solid var(--border-color);padding-top:16px;">
+        <h4 style="margin-bottom:12px;color:#00d4ff;font-size:14px;">服务器资源</h4>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">CPU 使用率</span>
+                    <span style="font-size:13px;font-weight:bold;color:#00d4ff;" id="sys-cpu">-</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="sys-cpu-bar" style="height:100%;background:linear-gradient(90deg,#00d4ff,#00ff88);width:0%;border-radius:4px;transition:width 0.5s;"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" id="sys-cpu-detail"></div>
+            </div>
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">内存使用率</span>
+                    <span style="font-size:13px;font-weight:bold;color:#00d4ff;" id="sys-mem">-</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="sys-mem-bar" style="height:100%;background:linear-gradient(90deg,#ffc107,#ff6b6b);width:0%;border-radius:4px;transition:width 0.5s;"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" id="sys-mem-detail"></div>
+            </div>
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">磁盘使用率</span>
+                    <span style="font-size:13px;font-weight:bold;color:#00d4ff;" id="sys-disk">-</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="sys-disk-bar" style="height:100%;background:linear-gradient(90deg,#9c27b0,#e91e63);width:0%;border-radius:4px;transition:width 0.5s;"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;" id="sys-disk-detail"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentTimeRange = '';
+
+function setTimeRange(range) {
+    currentTimeRange = range;
+    document.querySelectorAll('.time-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    loadStats();
+    loadRecentEmails();
+}
+
+function renderTrendChart(dailyTrend) {
+    const container = document.getElementById('trend-chart');
+    if (!dailyTrend || Object.keys(dailyTrend).length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无趋势数据</div>';
+        return;
+    }
+    
+    const sortedDates = Object.keys(dailyTrend).sort();
+    const dates = sortedDates.slice(-14);
+    if (dates.length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无趋势数据</div>';
+        return;
+    }
+    
+    const maxCount = Math.max(...dates.map(d => dailyTrend[d].total), 1);
+    const width = container.clientWidth || 600;
+    const height = 250;
+    const padding = { top: 20, right: 10, bottom: 30, left: 35 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    let svgHtml = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:100%;display:block;">`;
+
+    for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (chartHeight / 4) * i;
+        const value = Math.round(maxCount * (1 - i / 4));
+        svgHtml += `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="rgba(0,212,255,0.1)" stroke-width="1"/>`;
+        svgHtml += `<text x="${padding.left - 5}" y="${y + 4}" font-size="10" fill="rgba(255,255,255,0.5)" text-anchor="end">${value}</text>`;
+    }
+
+    const totalPoints = dates.map((date, i) => {
+        const x = padding.left + (i / (dates.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - (dailyTrend[date].total / maxCount) * chartHeight;
+        return { x, y };
+    });
+
+    const phishingPoints = dates.map((date, i) => {
+        const x = padding.left + (i / (dates.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((dailyTrend[date].phishing || 0) / maxCount) * chartHeight;
+        return { x, y };
+    });
+
+    const totalPath = totalPoints.map((p, i) => (i === 0 ? 'M' : 'L') + `${p.x},${p.y}`).join(' ');
+    const phishingPath = phishingPoints.map((p, i) => (i === 0 ? 'M' : 'L') + `${p.x},${p.y}`).join(' ');
+
+    const totalArea = totalPath + ` L${totalPoints[totalPoints.length-1].x},${padding.top + chartHeight} L${totalPoints[0].x},${padding.top + chartHeight} Z`;
+
+    svgHtml += `<defs><linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#00d4ff;stop-opacity:0.3"/><stop offset="100%" style="stop-color:#00d4ff;stop-opacity:0"/></linearGradient></defs>`;
+    svgHtml += `<path d="${totalArea}" fill="url(#areaGrad)"/>`;
+    svgHtml += `<path d="${totalPath}" fill="none" stroke="#00d4ff" stroke-width="2"/>`;
+    svgHtml += `<path d="${phishingPath}" fill="none" stroke="#ff6b6b" stroke-width="2"/>`;
+
+    totalPoints.forEach((p, i) => {
+        svgHtml += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#00d4ff"/>`;
+    });
+
+    // X轴日期标签：均匀分布，避免重叠
+    const labelStep = Math.ceil(dates.length / 6);
+    dates.forEach((date, i) => {
+        if (i % labelStep === 0 || i === dates.length - 1) {
+            const x = padding.left + (i / (dates.length - 1 || 1)) * chartWidth;
+            svgHtml += `<text x="${x}" y="${height - 10}" font-size="10" fill="rgba(255,255,255,0.5)" text-anchor="middle">${date.slice(5)}</text>`;
+        }
+    });
+
+    const legendX = width - 10;
+    svgHtml += `<rect x="${legendX - 110}" y="5" width="10" height="10" fill="#00d4ff"/>`;
+    svgHtml += `<text x="${legendX - 95}" y="14" font-size="11" fill="rgba(255,255,255,0.7)">邮件总量</text>`;
+    svgHtml += `<rect x="${legendX - 110}" y="20" width="10" height="10" fill="#ff6b6b"/>`;
+    svgHtml += `<text x="${legendX - 95}" y="29" font-size="11" fill="rgba(255,255,255,0.7)">钓鱼邮件</text>`;
+
+    svgHtml += '</svg>';
+    container.innerHTML = svgHtml;
+}
+
+function renderPieChart(data, chartId, legendId) {
+    const container = document.getElementById(chartId);
+    const legend = document.getElementById(legendId);
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无数据</div>';
+        legend.innerHTML = '';
+        return;
+    }
+    
+    const total = Object.values(data).reduce((a, b) => a + b, 0);
+    const colors = ['#ff6b6b', '#ff9800', '#00bcd4', '#ce93d8', '#00ff88', '#f06292', '#7986cb'];
+    let startAngle = -90;
+    
+    let svgHtml = `<svg viewBox="0 0 200 200" style="width:100%;height:100%;">`;
+    
+    Object.entries(data).forEach(([type, count], i) => {
+        const angle = (count / total) * 360;
+        const startRad = startAngle * Math.PI / 180;
+        const endRad = (startAngle + angle) * Math.PI / 180;
+        const x1 = 100 + 65 * Math.cos(startRad);
+        const y1 = 100 + 65 * Math.sin(startRad);
+        const x2 = 100 + 65 * Math.cos(endRad);
+        const y2 = 100 + 65 * Math.sin(endRad);
+        const largeArc = angle > 180 ? 1 : 0;
+        
+        svgHtml += `<path d="M100,100 L${x1},${y1} A65,65 0 ${largeArc},1 ${x2},${y2} Z" fill="${colors[i % colors.length]}" opacity="0.85"/>`;
+        startAngle += angle;
+    });
+    
+    svgHtml += `<circle cx="100" cy="100" r="38" fill="#0f2847"/>`;
+    svgHtml += `<text x="100" y="95" text-anchor="middle" font-size="18" font-weight="bold" fill="#fff">${total}</text>`;
+    svgHtml += `<text x="100" y="112" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.6)">总数</text>`;
+    svgHtml += '</svg>';
+    container.innerHTML = svgHtml;
+    
+    legend.innerHTML = Object.entries(data).map(([type, count], i) => `
+        <div class="pie-legend-item">
+            <div class="pie-legend-color" style="background:${colors[i % colors.length]}"></div>
+            <span style="color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${type}</span>
+            <span style="color:var(--text-primary);font-weight:600;">${count}</span>
+        </div>
+    `).join('');
+}
+
+function renderBarChart(data, elementId) {
+    const container = document.getElementById(elementId);
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无数据</div>';
+        return;
+    }
+    
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const max = Math.max(...sorted.map(d => d[1]), 1);
+    
+    container.innerHTML = sorted.map(([domain, count]) => `
+        <div class="bar-item">
+            <div class="bar-value" style="height:${(count/max)*160}px;" data-value="${count}"></div>
+            <div class="bar-label" title="${domain}">${domain}</div>
+        </div>
+    `).join('');
+}
+
+function renderRiskLevels(riskLevels) {
+    const container = document.getElementById('risk-levels');
+    const high = riskLevels.high || 0;
+    const medium = riskLevels.medium || 0;
+    const low = riskLevels.low || 0;
+    const total = high + medium + low;
+    
+    if (total === 0) {
+        container.innerHTML = '<div class="empty-state">暂无风险数据</div>';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="risk-level-bar">
+            <div class="risk-level-item high">
+                <div class="risk-count">${high}</div>
+                <div class="risk-label">高危</div>
+            </div>
+            <div class="risk-level-item medium">
+                <div class="risk-count">${medium}</div>
+                <div class="risk-label">中危</div>
+            </div>
+            <div class="risk-level-item low">
+                <div class="risk-count">${low}</div>
+                <div class="risk-label">低危</div>
+            </div>
+        </div>
+        <div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                <span style="color:var(--text-secondary);font-size:12px;">钓鱼率</span>
+                <span style="color:#ff6b6b;font-weight:600;">${total > 0 ? ((high + medium) / total * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                <div style="height:100%;background:linear-gradient(90deg,#ff6b6b,#ff9800);width:${total > 0 ? ((high + medium) / total * 100) : 0}%;border-radius:3px;"></div>
+            </div>
+        </div>
+    `;
+}
+
+function renderProcessingStats(data) {
+    const container = document.getElementById('processing-stats');
+    const total = data.total_emails || 0;
+    const pending = data.pending_count || 0;
+    const analyzed = data.analyzed_count || 0;
+    const replied = data.replied_count || 0;
+    
+    if (total === 0) {
+        container.innerHTML = '<div class="empty-state">暂无处理数据</div>';
+        return;
+    }
+    
+    const analyzeRate = total > 0 ? (analyzed / total * 100).toFixed(1) : 0;
+    const replyRate = analyzed > 0 ? (replied / analyzed * 100).toFixed(1) : 0;
+    
+    container.innerHTML = `
+        <div style="padding:12px 0;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="color:var(--text-secondary);font-size:13px;">分析完成率</span>
+                <span style="color:var(--primary);font-weight:600;">${analyzeRate}%</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                <div style="height:100%;background:linear-gradient(90deg,var(--primary),#00ff88);width:${analyzeRate}%;border-radius:3px;"></div>
+            </div>
+        </div>
+        <div style="padding:12px 0;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                <span style="color:var(--text-secondary);font-size:13px;">回复完成率</span>
+                <span style="color:#00ff88;font-weight:600;">${replyRate}%</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;">
+                <div style="height:100%;background:linear-gradient(90deg,#00ff88,#00bcd4);width:${replyRate}%;border-radius:3px;"></div>
+            </div>
+        </div>
+        <div style="padding:12px 0;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div style="text-align:center;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                <div style="font-size:18px;font-weight:bold;color:#ff9800;">${pending}</div>
+                <div style="font-size:11px;color:var(--text-muted);">待分析</div>
+            </div>
+            <div style="text-align:center;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                <div style="font-size:18px;font-weight:bold;color:#00bcd4;">${replied}</div>
+                <div style="font-size:11px;color:var(--text-muted);">已回复</div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadStats() {
+    try {
+        let url = '/api/statistics';
+        if (currentTimeRange) {
+            const days = currentTimeRange === '7days' ? 7 : 30;
+            const end = new Date();
+            const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+            const startStr = start.toISOString().slice(0, 10);
+            const endStr = end.toISOString().slice(0, 10);
+            url += `?start_date=${startStr}&end_date=${endStr}`;
+        }
+        
+        const data = await apiRequest(url);
+        
+        document.getElementById('stat-total').textContent = data.total_emails.toLocaleString();
+        document.getElementById('stat-phishing').textContent = data.phishing_count.toLocaleString();
+        document.getElementById('stat-normal').textContent = data.normal_count.toLocaleString();
+        document.getElementById('stat-pending').textContent = data.pending_count.toLocaleString();
+        document.getElementById('stat-replied').textContent = data.replied_count.toLocaleString();
+        
+        const alertBar = document.getElementById('alert-bar');
+        const alertMsg = document.getElementById('alert-message');
+        if (data.phishing_count > 0) {
+            alertBar.className = 'alerts-bar';
+            alertMsg.textContent = `检测到 ${data.phishing_count} 封钓鱼邮件，${data.pending_count} 封待处理，请及时处置！`;
+        } else {
+            alertBar.className = 'alerts-bar success';
+            alertMsg.innerHTML = '<span style="color:#00ff88;">✓</span> 系统运行正常，暂无钓鱼邮件威胁';
+        }
+        
+        renderTrendChart(data.daily_trend);
+        renderPieChart(data.phishing_types, 'phishing-types-chart', 'phishing-types-legend');
+        renderBarChart(data.top_senders, 'top-senders-chart');
+        renderRiskLevels(data.risk_levels);
+        renderProcessingStats(data);
+    } catch (e) {
+        showAlert('加载统计数据失败: ' + e.message, 'error');
+    }
+}
+
+async function loadRecentEmails() {
+    try {
+        const data = await apiRequest('/api/emails?page=1&per_page=10');
+        const tbody = document.querySelector('#recent-emails-table tbody');
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:40px;">暂无邮件数据</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.items.map(e => {
+            let statusBadge = '<span class="badge badge-pending">待处理</span>';
+            if (e.status === 'analyzed') statusBadge = '<span class="badge badge-analyzed">已分析</span>';
+            else if (e.status === 'replied') statusBadge = '<span class="badge badge-replied">已回复</span>';
+            
+            let resultBadge = '-';
+            let riskTag = '-';
+            if (e.analysis) {
+                resultBadge = e.analysis.is_phishing
+                    ? '<span class="badge badge-phishing">钓鱼邮件</span>'
+                    : '<span class="badge badge-normal">正常邮件</span>';
+                riskTag = `<span class="tag tag-${e.analysis.risk_level}">${formatRiskLevel(e.analysis.risk_level)}</span>`;
+            }
+            
+            return `<tr>
+                <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.from_email}">${e.from_email}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.subject || ''}">${e.subject || '(无主题)'}</td>
+                <td>${resultBadge}</td>
+                <td>${riskTag}</td>
+                <td>${formatDate(e.received_at)}</td>
+                <td>${statusBadge}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="window.location.href='/analysis-records'">查看</button></td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        showAlert('加载邮件数据失败: ' + e.message, 'error');
+    }
+}
+
+function exportReport() {
+    window.location.href = '/statistics';
+}
+
+async function loadMonitorStatus() {
+    try {
+        const resp = await fetch('/api/monitor/status', { credentials: 'same-origin' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        document.getElementById('monitor-timestamp').textContent = '更新于: ' + data.timestamp;
+
+        const components = data.components || {};
+        const panel = document.getElementById('monitor-panel');
+        const statusColors = {
+            'online': '#00ff88',
+            'offline': '#ff4444',
+            'unknown': '#888',
+            'warning': '#ffc107'
+        };
+        const statusLabels = {
+            'online': '正常运行',
+            'offline': '已离线',
+            'unknown': '未配置',
+            'warning': '警告'
+        };
+
+        panel.innerHTML = Object.values(components).map(c => {
+            const color = statusColors[c.status] || '#888';
+            const label = statusLabels[c.status] || c.status;
+            return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(${c.status === 'online' ? '0,255,136' : c.status === 'offline' ? '255,68,68' : '128,128,128'},0.2);border-radius:8px;padding:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <span style="font-size:14px;font-weight:bold;color:var(--text-secondary);">${c.name}</span>
+                    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:bold;color:${color};">
+                        <span style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 8px ${color};animation:pulse 2s infinite;"></span>
+                        ${label}
+                    </span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">${c.detail || ''}</div>
+            </div>`;
+        }).join('');
+
+        const sys = data.system || {};
+        if (sys.cpu_percent !== undefined) {
+            document.getElementById('sys-cpu').textContent = sys.cpu_percent + '%';
+            document.getElementById('sys-cpu-bar').style.width = sys.cpu_percent + '%';
+            document.getElementById('sys-cpu-detail').textContent = sys.cpu_count + ' 核';
+        }
+        if (sys.memory_percent !== undefined) {
+            document.getElementById('sys-mem').textContent = sys.memory_percent + '%';
+            document.getElementById('sys-mem-bar').style.width = sys.memory_percent + '%';
+            document.getElementById('sys-mem-detail').textContent = sys.memory_used + 'GB / ' + sys.memory_total + 'GB';
+        }
+        if (sys.disk_percent !== undefined) {
+            document.getElementById('sys-disk').textContent = sys.disk_percent + '%';
+            document.getElementById('sys-disk-bar').style.width = sys.disk_percent + '%';
+            document.getElementById('sys-disk-detail').textContent = sys.disk_used + 'GB / ' + sys.disk_total + 'GB';
+        }
+    } catch (e) {
+        console.log('Monitor status load failed:', e);
+    }
+}
+
+loadStats();
+loadRecentEmails();
+loadMonitorStatus();
+setInterval(loadMonitorStatus, 30000);
+</script>
+{% endblock %}

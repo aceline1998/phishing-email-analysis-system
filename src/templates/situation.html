@@ -1,0 +1,1392 @@
+{% extends "base.html" %}
+
+{% block title %}态势大屏 - 钓鱼邮件智能分析系统{% endblock %}
+
+{% block extra_css %}
+<style>
+.main-container { padding: 0 !important; }
+.situation-container {
+    margin-top: 0;
+    padding: 0;
+    min-height: calc(100vh - 60px);
+    background: linear-gradient(135deg, #020617 0%, #0a1628 50%, #020617 100%);
+    position: relative;
+    overflow: hidden;
+}
+.situation-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+        linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+}
+.situation-header {
+    position: relative;
+    text-align: center;
+    padding: 2px 0 0;
+    z-index: 1;
+}
+.situation-title {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #00d4ff, #00ff88, #00d4ff);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 3px;
+    animation: titleGlow 3s ease-in-out infinite;
+    text-shadow: 0 0 30px rgba(0,212,255,0.3);
+    line-height: 1.2;
+}
+@keyframes titleGlow {
+    0%, 100% { background-position: 0% center; filter: brightness(1); }
+    50% { background-position: 100% center; filter: brightness(1.2); }
+}
+.situation-subtitle {
+    font-size: 10px;
+    color: rgba(0,212,255,0.4);
+    margin-top: 0;
+    letter-spacing: 1px;
+    display: none;
+}
+.situation-content {
+    display: grid;
+    grid-template-columns: 290px 1fr 290px;
+    gap: 10px;
+    padding: 4px 10px 10px;
+    position: relative;
+    z-index: 1;
+    height: calc(100vh - 92px);
+}
+.situation-panel {
+    background: rgba(15, 40, 71, 0.4);
+    border: 1px solid rgba(0,212,255,0.15);
+    border-radius: 8px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+}
+.situation-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    opacity: 0.6;
+}
+.situation-panel::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-top: 2px solid var(--primary);
+    border-left: 2px solid var(--primary);
+}
+.panel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.panel-title::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    background: linear-gradient(180deg, var(--primary), transparent);
+    border-radius: 2px;
+}
+.panel-corner {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    border-bottom: 2px solid var(--primary);
+    border-right: 2px solid var(--primary);
+}
+.stats-bar {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    padding: 2px 12px 6px;
+    position: relative;
+    z-index: 1;
+}
+.stat-item {
+    background: rgba(15, 40, 71, 0.5);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 8px;
+    padding: 6px 16px;
+    text-align: center;
+    min-width: 110px;
+    position: relative;
+    overflow: hidden;
+}
+.stat-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.1), transparent);
+    animation: statShine 4s ease-in-out infinite;
+}
+@keyframes statShine {
+    0% { left: -100%; }
+    50%, 100% { left: 100%; }
+}
+.stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.3s ease;
+}
+.stat-value.flip { transform: scale(1.15); }
+.stat-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 3px;
+}
+.stat-value.danger { color: #ff6b6b; text-shadow: 0 0 20px rgba(255,107,107,0.5); }
+.stat-value.warning { color: #ff9800; text-shadow: 0 0 20px rgba(255,152,0,0.5); }
+.stat-value.success { color: #00ff88; text-shadow: 0 0 20px rgba(0,255,136,0.5); }
+
+.map-container {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+.map-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.globe-canvas {
+    width: 100%;
+    height: 100%;
+    max-height: 400px;
+}
+
+.left-column, .right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.left-column .situation-panel,
+.right-column .situation-panel {
+    flex: 1;
+}
+
+.chart-container {
+    height: 130px;
+    position: relative;
+}
+.chart-canvas {
+    width: 100%;
+    height: 100%;
+}
+.scroll-container {
+    overflow: hidden;
+    position: relative;
+}
+.scroll-content {
+    animation: scrollUp 12s linear infinite;
+}
+.scroll-content:hover {
+    animation-play-state: paused;
+}
+@keyframes scrollUp {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
+}
+
+.threat-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.threat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,212,255,0.08);
+    font-size: 12px;
+    animation: slideIn 0.5s ease;
+}
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+.threat-item:last-child { border-bottom: none; }
+.threat-rank {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+    background: rgba(0,212,255,0.15);
+    color: var(--primary);
+}
+.threat-rank.top3 { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+.threat-info { flex: 1; min-width: 0; }
+.threat-domain { color: #fff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.threat-meta { color: rgba(255,255,255,0.4); font-size: 11px; margin-top: 2px; }
+.threat-count { color: #ff6b6b; font-weight: 600; font-size: 14px; }
+
+.attack-source-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 12px;
+}
+.source-flag {
+    width: 24px;
+    height: 16px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+    background: rgba(0,212,255,0.2);
+    color: var(--primary);
+}
+.source-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.source-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #ff6b6b, #ff9800);
+    transition: width 1s ease;
+}
+.source-count { color: #ff6b6b; font-weight: 600; width: 30px; text-align: right; }
+
+.bottom-panel {
+    grid-column: 1 / -1;
+    height: 180px;
+}
+.threat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.threat-table th {
+    text-align: left;
+    padding: 8px;
+    color: rgba(255,255,255,0.5);
+    font-weight: 500;
+    border-bottom: 1px solid rgba(0,212,255,0.15);
+    white-space: nowrap;
+}
+.threat-table td {
+    padding: 8px;
+    border-bottom: 1px solid rgba(0,212,255,0.05);
+    color: rgba(255,255,255,0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.threat-table tr:hover {
+    background: rgba(0,212,255,0.05);
+}
+.badge-risk {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+}
+.badge-risk.high { background: rgba(255,71,87,0.2); color: #ff6b6b; }
+.badge-risk.medium { background: rgba(255,152,0,0.2); color: #ff9800; }
+.badge-risk.low { background: rgba(0,255,136,0.2); color: #00ff88; }
+
+.pie-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 120px;
+}
+.pie-chart {
+    width: 100px;
+    height: 100px;
+    flex-shrink: 0;
+}
+.pie-legend {
+    flex: 1;
+    font-size: 11px;
+}
+.pie-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.pie-legend-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+.pie-legend-label { color: rgba(255,255,255,0.7); }
+.pie-legend-value { color: #fff; font-weight: 600; margin-left: auto; }
+
+.update-time {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+}
+
+.footer { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="situation-container">
+    <div class="situation-header">
+        <div class="situation-title">钓鱼邮件态势感知大屏</div>
+        <div class="situation-subtitle">PHISHING EMAIL THREAT SITUATION AWARENESS</div>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">邮件总量</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value danger" id="stat-phishing">0</div>
+            <div class="stat-label">钓鱼邮件</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value success" id="stat-normal">0</div>
+            <div class="stat-label">正常邮件</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value warning" id="stat-today">0</div>
+            <div class="stat-label">今日新增</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value danger" id="stat-today-phishing">0</div>
+            <div class="stat-label">今日钓鱼</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-pending">0</div>
+            <div class="stat-label">待处理</div>
+        </div>
+    </div>
+
+    <div class="situation-content">
+        <div class="left-column">
+            <div class="situation-panel">
+                <div class="panel-title">7日威胁趋势</div>
+                <div class="panel-corner"></div>
+                <div class="chart-container">
+                    <canvas id="trendChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+            <div class="situation-panel">
+                <div class="panel-title">威胁类型分布</div>
+                <div class="panel-corner"></div>
+                <div class="pie-container" id="typePieContainer">
+                    <canvas id="typePie" class="pie-chart"></canvas>
+                    <div class="pie-legend" id="typeLegend"></div>
+                </div>
+            </div>
+            <div class="situation-panel">
+                <div class="panel-title">风险等级分布</div>
+                <div class="panel-corner"></div>
+                <div class="pie-container" id="riskPieContainer">
+                    <canvas id="riskPie" class="pie-chart"></canvas>
+                    <div class="pie-legend" id="riskLegend"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div class="situation-panel" style="flex:1;display:flex;flex-direction:column;">
+                <div class="panel-title">全球攻击态势</div>
+                <div class="update-time" id="updateTime">更新于: --</div>
+                <div class="panel-corner"></div>
+                <div class="map-wrapper">
+                    <canvas id="globeCanvas" class="globe-canvas"></canvas>
+                </div>
+            </div>
+            <div class="situation-panel bottom-panel">
+                <div class="panel-title">实时威胁情报</div>
+                <div class="panel-corner"></div>
+                <div class="scroll-container" style="max-height:140px;">
+                    <div class="scroll-content" id="threatScrollContent">
+                        <table class="threat-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:40px;">序号</th>
+                                    <th>邮件主题</th>
+                                    <th>发件人</th>
+                                    <th style="width:60px;">风险</th>
+                                    <th style="width:80px;">类型</th>
+                                    <th style="width:80px;">时间</th>
+                                </tr>
+                            </thead>
+                            <tbody id="threatTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-column">
+            <div class="situation-panel">
+                <div class="panel-title">攻击源TOP5</div>
+                <div class="panel-corner"></div>
+                <div id="attackSourceList"></div>
+            </div>
+            <div class="situation-panel">
+                <div class="panel-title">24小时邮件趋势</div>
+                <div class="panel-corner"></div>
+                <div class="chart-container">
+                    <canvas id="hourlyChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+            <div class="situation-panel">
+                <div class="panel-title">系统状态</div>
+                <div class="panel-corner"></div>
+                <div style="display:flex;flex-direction:column;gap:10px;font-size:12px;">
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:rgba(255,255,255,0.5);">已回复邮件</span>
+                        <span style="color:#00ff88;font-weight:600;" id="stat-replied">0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:rgba(255,255,255,0.5);">高危威胁</span>
+                        <span style="color:#ff6b6b;font-weight:600;" id="stat-high">0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:rgba(255,255,255,0.5);">中危威胁</span>
+                        <span style="color:#ff9800;font-weight:600;" id="stat-medium">0</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:rgba(255,255,255,0.5);">低危威胁</span>
+                        <span style="color:#00ff88;font-weight:600;" id="stat-low">0</span>
+                    </div>
+                    <div style="height:1px;background:rgba(0,212,255,0.1);margin:4px 0;"></div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="color:rgba(255,255,255,0.5);">检测准确率</span>
+                        <span style="color:var(--primary);font-weight:600;" id="stat-accuracy">--%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let situationData = null;
+
+async function loadSituationData() {
+    try {
+        const data = await apiRequest('/api/situation/data');
+        situationData = data;
+        updateStats(data.overview);
+        renderTrendChart(data.recent_7days);
+        renderTypePie(data.phishing_types);
+        renderRiskPie(data.overview);
+        renderHourlyChart(data.hourly_chart);
+        renderAttackSources(data.attack_sources);
+        renderThreatTable(data.recent_threats);
+        renderAttackLines(data.attack_sources);
+        document.getElementById('updateTime').textContent = '更新于: ' + new Date().toLocaleTimeString('zh-CN');
+    } catch (e) {
+        console.error('加载态势数据失败:', e);
+    }
+}
+
+function updateStats(o) {
+    animateNumber('stat-total', o.total_emails);
+    animateNumber('stat-phishing', o.phishing_count);
+    animateNumber('stat-normal', o.normal_count);
+    animateNumber('stat-today', o.today_emails);
+    animateNumber('stat-today-phishing', o.today_phishing);
+    animateNumber('stat-pending', o.pending_count);
+    animateNumber('stat-replied', o.replied_count);
+    animateNumber('stat-high', o.high_risk);
+    animateNumber('stat-medium', o.medium_risk);
+    animateNumber('stat-low', o.low_risk);
+
+    const total = o.phishing_count + o.normal_count;
+    const acc = total > 0 ? ((o.phishing_count / total) * 100).toFixed(1) : 0;
+    document.getElementById('stat-accuracy').textContent = acc + '%';
+}
+
+function animateNumber(id, value) {
+    const el = document.getElementById(id);
+    const start = parseInt(el.textContent) || 0;
+    const end = value;
+    if (start === end) return;
+
+    const duration = 800;
+    const startTime = performance.now();
+
+    el.classList.add('flip');
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(start + (end - start) * ease);
+        el.textContent = current;
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        } else {
+            el.textContent = end;
+            setTimeout(() => el.classList.remove('flip'), 200);
+        }
+    }
+    requestAnimationFrame(update);
+}
+
+function renderTrendChart(data) {
+    const canvas = document.getElementById('trendChart');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width, h = rect.height;
+    const labels = data.map(d => d.date);
+    const totals = data.map(d => d.total);
+    const phishings = data.map(d => d.phishing);
+    const maxVal = Math.max(...totals, ...phishings, 1);
+
+    ctx.clearRect(0, 0, w, h);
+    const pad = { top: 10, right: 10, bottom: 24, left: 30 };
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+
+    // 网格
+    ctx.strokeStyle = 'rgba(0,212,255,0.08)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+        const y = pad.top + ch * i / 4;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+    }
+
+    // 柱状图
+    const barW = cw / data.length * 0.35;
+    const step = cw / data.length;
+    data.forEach((d, i) => {
+        const x = pad.left + step * i + step / 2;
+        const h1 = (d.total / maxVal) * ch;
+        const h2 = (d.phishing / maxVal) * ch;
+
+        const grad1 = ctx.createLinearGradient(0, pad.top + ch - h1, 0, pad.top + ch);
+        grad1.addColorStop(0, 'rgba(0,212,255,0.8)');
+        grad1.addColorStop(1, 'rgba(0,212,255,0.1)');
+        ctx.fillStyle = grad1;
+        ctx.fillRect(x - barW, pad.top + ch - h1, barW, h1);
+
+        const grad2 = ctx.createLinearGradient(0, pad.top + ch - h2, 0, pad.top + ch);
+        grad2.addColorStop(0, 'rgba(255,107,107,0.8)');
+        grad2.addColorStop(1, 'rgba(255,107,107,0.1)');
+        ctx.fillStyle = grad2;
+        ctx.fillRect(x, pad.top + ch - h2, barW, h2);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(d.date, x, h - 4);
+    });
+
+    // 折线
+    ctx.strokeStyle = 'rgba(255,107,107,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((d, i) => {
+        const x = pad.left + step * i + step / 2;
+        const y = pad.top + ch - (d.phishing / maxVal) * ch;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Y轴标签
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+        const val = Math.round(maxVal * (4 - i) / 4);
+        ctx.fillText(val, pad.left - 4, pad.top + ch * i / 4 + 3);
+    }
+}
+
+function renderTypePie(data) {
+    const canvas = document.getElementById('typePie');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const colors = ['#ff6b6b', '#ff9800', '#00d4ff', '#00ff88', '#ce93d8', '#ffc107'];
+    const total = data.reduce((s, d) => s + d.count, 0);
+    const cx = rect.width / 2, cy = rect.height / 2, r = Math.min(cx, cy) - 6;
+
+    let start = -Math.PI / 2;
+    data.forEach((d, i) => {
+        const angle = total > 0 ? (d.count / total) * Math.PI * 2 : 0;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, start + angle);
+        ctx.closePath();
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fill();
+        start += angle;
+    });
+
+    // 中心空心
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15,40,71,0.8)';
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(total, cx, cy + 2);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('总计', cx, cy + 14);
+
+    // 图例
+    const legend = document.getElementById('typeLegend');
+    legend.innerHTML = data.map((d, i) => `
+        <div class="pie-legend-item">
+            <div class="pie-legend-color" style="background:${colors[i % colors.length]}"></div>
+            <span class="pie-legend-label">${d.type}</span>
+            <span class="pie-legend-value">${d.count}</span>
+        </div>
+    `).join('');
+}
+
+function renderRiskPie(overview) {
+    const canvas = document.getElementById('riskPie');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const data = [
+        { label: '高危', value: overview.high_risk, color: '#ff6b6b' },
+        { label: '中危', value: overview.medium_risk, color: '#ff9800' },
+        { label: '低危', value: overview.low_risk, color: '#00ff88' }
+    ];
+    const total = data.reduce((s, d) => s + d.value, 0);
+    const cx = rect.width / 2, cy = rect.height / 2, r = Math.min(cx, cy) - 6;
+
+    let start = -Math.PI / 2;
+    data.forEach(d => {
+        const angle = total > 0 ? (d.value / total) * Math.PI * 2 : 0;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, start + angle);
+        ctx.closePath();
+        ctx.fillStyle = d.color;
+        ctx.fill();
+        start += angle;
+    });
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15,40,71,0.8)';
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(total, cx, cy + 2);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('总计', cx, cy + 14);
+
+    const legend = document.getElementById('riskLegend');
+    legend.innerHTML = data.map(d => `
+        <div class="pie-legend-item">
+            <div class="pie-legend-color" style="background:${d.color}"></div>
+            <span class="pie-legend-label">${d.label}</span>
+            <span class="pie-legend-value">${d.value}</span>
+        </div>
+    `).join('');
+}
+
+function renderHourlyChart(data) {
+    const canvas = document.getElementById('hourlyChart');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width, h = rect.height;
+    const pad = { top: 10, right: 10, bottom: 24, left: 30 };
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+    const values = Object.values(data);
+    const maxVal = Math.max(...values, 1);
+    const labels = Object.keys(data);
+
+    ctx.clearRect(0, 0, w, h);
+
+    // 网格
+    ctx.strokeStyle = 'rgba(0,212,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+        const y = pad.top + ch * i / 3;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+    }
+
+    // 面积图
+    const step = cw / (labels.length - 1 || 1);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top + ch);
+    labels.forEach((k, i) => {
+        const x = pad.left + step * i;
+        const y = pad.top + ch - (data[k] / maxVal) * ch;
+        if (i === 0) ctx.lineTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.lineTo(pad.left + cw, pad.top + ch);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
+    grad.addColorStop(0, 'rgba(0,212,255,0.3)');
+    grad.addColorStop(1, 'rgba(0,212,255,0.02)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // 线条
+    ctx.strokeStyle = 'rgba(0,212,255,0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    labels.forEach((k, i) => {
+        const x = pad.left + step * i;
+        const y = pad.top + ch - (data[k] / maxVal) * ch;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // 点
+    labels.forEach((k, i) => {
+        if (i % 4 !== 0) return;
+        const x = pad.left + step * i;
+        const y = pad.top + ch - (data[k] / maxVal) * ch;
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#00d4ff';
+        ctx.fill();
+    });
+
+    // X轴标签
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < labels.length; i += 4) {
+        ctx.fillText(labels[i] + 'h', pad.left + step * i, h - 6);
+    }
+
+    // Y轴
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 3; i++) {
+        const val = Math.round(maxVal * (3 - i) / 3);
+        ctx.fillText(val, pad.left - 4, pad.top + ch * i / 3 + 3);
+    }
+}
+
+function renderAttackSources(data) {
+    const container = document.getElementById('attackSourceList');
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:12px;text-align:center;padding:20px;">暂无数据</div>';
+        return;
+    }
+    const max = Math.max(...data.map(d => d.count), 1);
+    container.innerHTML = data.map((d, i) => `
+        <div class="attack-source-item">
+            <span class="source-flag">${d.country.slice(0,1)}</span>
+            <div style="flex:1;min-width:0;">
+                <div style="color:#fff;font-size:12px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cleanDomain(d.domain)}</div>
+                <div class="source-bar-bg">
+                    <div class="source-bar-fill" style="width:${(d.count / max * 100).toFixed(0)}%"></div>
+                </div>
+            </div>
+            <span class="source-count">${d.count}</span>
+        </div>
+    `).join('');
+}
+
+function renderThreatTable(data) {
+    const tbody = document.getElementById('threatTableBody');
+    const scrollContent = document.getElementById('threatScrollContent');
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:rgba(255,255,255,0.3);">暂无威胁数据</td></tr>';
+        return;
+    }
+
+    const rows = data.map((t, i) => {
+        const riskClass = t.risk_level === 'high' ? 'high' : t.risk_level === 'medium' ? 'medium' : 'low';
+        const riskText = { high: '高危', medium: '中危', low: '低危' }[t.risk_level] || '未知';
+        return `
+            <tr>
+                <td>${i + 1}</td>
+                <td title="${t.subject}">${t.subject}</td>
+                <td title="${t.from_email}">${t.from_email}</td>
+                <td><span class="badge-risk ${riskClass}">${riskText}</span></td>
+                <td>${t.phishing_type || '其他'}</td>
+                <td>${t.created_at}</td>
+            </tr>
+        `;
+    }).join('');
+
+    // 复制一份实现无缝滚动
+    tbody.innerHTML = rows + rows;
+
+    // 如果内容不够，暂停动画
+    const isOverflow = scrollContent.scrollHeight > 140;
+    scrollContent.style.animationPlayState = isOverflow ? 'running' : 'paused';
+}
+
+function cleanDomain(domain) {
+    return (domain || '').replace(/[<>]/g, '').trim();
+}
+
+// 国家经纬度坐标（经度, 纬度）
+const countryLatLng = {
+    '中国': { lat: 35, lng: 105 },
+    '美国': { lat: 38, lng: -97 },
+    '俄罗斯': { lat: 60, lng: 100 },
+    '日本': { lat: 36, lng: 138 },
+    '韩国': { lat: 37, lng: 127 },
+    '英国': { lat: 54, lng: -2 },
+    '德国': { lat: 51, lng: 10 },
+    '法国': { lat: 46, lng: 2 },
+    '巴西': { lat: -15, lng: -55 },
+    '印度': { lat: 22, lng: 78 },
+    '新加坡': { lat: 1, lng: 104 },
+    '其他': { lat: 0, lng: 0 }
+};
+
+// 3D 旋转地球
+const Globe = {
+    canvas: null,
+    ctx: null,
+    centerX: 0,
+    centerY: 0,
+    radius: 0,
+    rotation: 0.3,
+    tilt: 0.4,
+    speed: 0.0015,
+    attackSources: [],
+    particles: [],
+    stars: [],
+    landPoints: [],
+
+    init() {
+        this.canvas = document.getElementById('globeCanvas');
+        if (!this.canvas) return;
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        this.generateStars();
+        this.generateLandPoints();
+        this.generateParticles();
+        this.animate();
+        window.addEventListener('resize', () => this.resize());
+    },
+
+    resize() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = this.canvas.getBoundingClientRect();
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
+        this.ctx.scale(dpr, dpr);
+        this.centerX = rect.width / 2;
+        this.centerY = rect.height / 2;
+        this.radius = Math.min(rect.width, rect.height) * 0.4;
+    },
+
+    generateStars() {
+        this.stars = [];
+        for (let i = 0; i < 80; i++) {
+            this.stars.push({
+                x: Math.random() * 2 - 1,
+                y: Math.random() * 2 - 1,
+                z: Math.random() * 2 - 1,
+                size: Math.random() * 1.5 + 0.5,
+                twinkle: Math.random() * Math.PI * 2
+            });
+        }
+    },
+
+    generateLandPoints() {
+        // 简化的大陆轮廓点（近似大陆分布）
+        this.landPoints = [];
+        // 北美洲
+        for (let i = 0; i < 40; i++) {
+            this.landPoints.push({
+                lat: 25 + Math.random() * 35,
+                lng: -125 + Math.random() * 60,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+        // 南美洲
+        for (let i = 0; i < 25; i++) {
+            this.landPoints.push({
+                lat: -55 + Math.random() * 40,
+                lng: -80 + Math.random() * 40,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+        // 欧洲
+        for (let i = 0; i < 20; i++) {
+            this.landPoints.push({
+                lat: 40 + Math.random() * 20,
+                lng: -10 + Math.random() * 35,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+        // 非洲
+        for (let i = 0; i < 30; i++) {
+            this.landPoints.push({
+                lat: -35 + Math.random() * 70,
+                lng: -15 + Math.random() * 45,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+        // 亚洲
+        for (let i = 0; i < 55; i++) {
+            this.landPoints.push({
+                lat: 10 + Math.random() * 55,
+                lng: 40 + Math.random() * 100,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+        // 大洋洲
+        for (let i = 0; i < 15; i++) {
+            this.landPoints.push({
+                lat: -40 + Math.random() * 25,
+                lng: 115 + Math.random() * 40,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+    },
+
+    generateParticles() {
+        this.particles = [];
+        for (let i = 0; i < 25; i++) {
+            this.particles.push({
+                lat: -90 + Math.random() * 180,
+                lng: -180 + Math.random() * 360,
+                speed: 0.02 + Math.random() * 0.05,
+                phase: Math.random() * Math.PI * 2,
+                size: Math.random() * 1.5 + 0.5
+            });
+        }
+    },
+
+    project(lat, lng) {
+        const latRad = lat * Math.PI / 180;
+        const lngRad = (lng + this.rotation * 180 / Math.PI) * Math.PI / 180;
+
+        let x = Math.cos(latRad) * Math.sin(lngRad);
+        let y = Math.sin(latRad);
+        let z = Math.cos(latRad) * Math.cos(lngRad);
+
+        // tilt
+        const y2 = y * Math.cos(this.tilt) - z * Math.sin(this.tilt);
+        const z2 = y * Math.sin(this.tilt) + z * Math.cos(this.tilt);
+        y = y2; z = z2;
+
+        return {
+            x: this.centerX + x * this.radius,
+            y: this.centerY - y * this.radius,
+            z: z,
+            visible: z > -0.1
+        };
+    },
+
+    drawGlobe() {
+        const ctx = this.ctx;
+
+        // 外发光
+        const glowGrad = ctx.createRadialGradient(
+            this.centerX, this.centerY, this.radius * 0.85,
+            this.centerX, this.centerY, this.radius * 1.25
+        );
+        glowGrad.addColorStop(0, 'rgba(0, 212, 255, 0.15)');
+        glowGrad.addColorStop(0.5, 'rgba(0, 212, 255, 0.05)');
+        glowGrad.addColorStop(1, 'rgba(0, 212, 255, 0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(this.centerX, this.centerY, this.radius * 1.25, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 球体渐变（从左到右高光 + 右侧暗部）
+        const sphereGrad = ctx.createRadialGradient(
+            this.centerX - this.radius * 0.3, this.centerY - this.radius * 0.3, this.radius * 0.1,
+            this.centerX, this.centerY, this.radius
+        );
+        sphereGrad.addColorStop(0, 'rgba(0, 212, 255, 0.12)');
+        sphereGrad.addColorStop(0.4, 'rgba(0, 100, 180, 0.08)');
+        sphereGrad.addColorStop(0.8, 'rgba(0, 50, 120, 0.1)');
+        sphereGrad.addColorStop(1, 'rgba(0, 20, 60, 0.15)');
+
+        ctx.fillStyle = sphereGrad;
+        ctx.beginPath();
+        ctx.arc(this.centerX, this.centerY, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 球体边框
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // 经纬线
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.08)';
+        ctx.lineWidth = 0.5;
+
+        // 纬线
+        for (let lat = -60; lat <= 60; lat += 30) {
+            ctx.beginPath();
+            let first = true;
+            for (let lng = -180; lng <= 180; lng += 5) {
+                const p = this.project(lat, lng);
+                if (p.visible) {
+                    if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                    else ctx.lineTo(p.x, p.y);
+                } else {
+                    first = true;
+                }
+            }
+            ctx.stroke();
+        }
+
+        // 经线
+        for (let lng = -180; lng < 180; lng += 30) {
+            ctx.beginPath();
+            let first = true;
+            for (let lat = -90; lat <= 90; lat += 5) {
+                const p = this.project(lat, lng);
+                if (p.visible) {
+                    if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                    else ctx.lineTo(p.x, p.y);
+                } else {
+                    first = true;
+                }
+            }
+            ctx.stroke();
+        }
+
+        // 赤道高亮
+        ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let first = true;
+        for (let lng = -180; lng <= 180; lng += 3) {
+            const p = this.project(0, lng);
+            if (p.visible) {
+                if (first) { ctx.moveTo(p.x, p.y); first = false; }
+                else ctx.lineTo(p.x, p.y);
+            } else {
+                first = true;
+            }
+        }
+        ctx.stroke();
+    },
+
+    drawLand() {
+        const ctx = this.ctx;
+        const visiblePoints = [];
+
+        for (const pt of this.landPoints) {
+            const p = this.project(pt.lat, pt.lng);
+            if (p.visible) {
+                visiblePoints.push({ ...p, size: pt.size });
+            }
+        }
+
+        // 按 z 排序（后面的先画）
+        visiblePoints.sort((a, b) => a.z - b.z);
+
+        for (const p of visiblePoints) {
+            const alpha = 0.3 + p.z * 0.6;
+            const size = p.size * (0.5 + p.z * 0.8);
+            ctx.fillStyle = `rgba(0, 255, 136, ${alpha})`;
+            ctx.shadowColor = 'rgba(0, 255, 136, 0.5)';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+    },
+
+    drawParticles() {
+        const ctx = this.ctx;
+        const time = Date.now() * 0.001;
+
+        for (const p of this.particles) {
+            const lng = p.lng + Math.sin(time * p.speed + p.phase) * 2;
+            const lat = p.lat + Math.cos(time * p.speed * 0.7 + p.phase) * 1;
+            const proj = this.project(lat, lng);
+            if (proj.visible) {
+                const alpha = 0.4 + proj.z * 0.5;
+                const size = p.size * (0.5 + proj.z * 0.8);
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                ctx.shadowBlur = 3;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.shadowBlur = 0;
+    },
+
+    drawStars(time) {
+        const ctx = this.ctx;
+        for (const s of this.stars) {
+            const twinkle = 0.5 + 0.5 * Math.sin(time * 2 + s.twinkle);
+            const x = this.centerX + s.x * this.radius * 1.5;
+            const y = this.centerY + s.y * this.radius * 1.5;
+            // 只画在外圈
+            const dist = Math.sqrt((x - this.centerX) ** 2 + (y - this.centerY) ** 2);
+            if (dist > this.radius * 1.05 && dist < this.radius * 1.6) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + twinkle * 0.5})`;
+                ctx.beginPath();
+                ctx.arc(x, y, s.size * twinkle, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    },
+
+    drawAttacks(time) {
+        if (!this.attackSources || this.attackSources.length === 0) return;
+        const ctx = this.ctx;
+        const target = countryLatLng['中国'];
+        const targetProj = this.project(target.lat, target.lng);
+
+        if (!targetProj.visible) return;
+
+        this.attackSources.forEach((s, i) => {
+            const src = countryLatLng[s.country] || countryLatLng['其他'];
+            if (s.country === '中国') return;
+
+            const srcProj = this.project(src.lat, src.lng);
+            if (!srcProj.visible) return;
+
+            // 攻击弧线
+            const progress = ((time * 0.0005 + i * 0.2) % 1);
+
+            // 起点光点
+            ctx.fillStyle = 'rgba(255, 71, 87, 0.9)';
+            ctx.shadowColor = 'rgba(255, 71, 87, 1)';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(srcProj.x, srcProj.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 弧线
+            ctx.beginPath();
+            const steps = 30;
+            let started = false;
+            for (let j = 0; j <= steps; j++) {
+                const t = j / steps;
+                // 球面插值（简化为线性插值+高度弧线）
+                const lat = src.lat + (target.lat - src.lat) * t;
+                const lng = src.lng + (target.lng - src.lng) * t;
+                const lift = Math.sin(t * Math.PI) * 0.25;
+
+                const latRad = lat * Math.PI / 180;
+                const lngRad = (lng + this.rotation * 180 / Math.PI) * Math.PI / 180;
+
+                let x = Math.cos(latRad) * Math.sin(lngRad);
+                let y = Math.sin(latRad);
+                let z = Math.cos(latRad) * Math.cos(lngRad);
+
+                // 抬升
+                const factor = 1 + lift;
+                x *= factor;
+                y *= factor;
+                z *= factor;
+
+                const y2 = y * Math.cos(this.tilt) - z * Math.sin(this.tilt);
+                const z2 = y * Math.sin(this.tilt) + z * Math.cos(this.tilt);
+
+                const px = this.centerX + x * this.radius;
+                const py = this.centerY - y2 * this.radius;
+                const pz = z2;
+
+                if (pz > -0.15) {
+                    if (!started) { ctx.moveTo(px, py); started = true; }
+                    else ctx.lineTo(px, py);
+                } else {
+                    started = false;
+                }
+            }
+
+            ctx.strokeStyle = `rgba(255, 71, 87, 0.7)`;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = 'rgba(255, 71, 87, 0.8)';
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+
+            // 流动的光点
+            const t = progress;
+            const lat = src.lat + (target.lat - src.lat) * t;
+            const lng = src.lng + (target.lng - src.lng) * t;
+            const lift = Math.sin(t * Math.PI) * 0.25;
+
+            const latRad = lat * Math.PI / 180;
+            const lngRad = (lng + this.rotation * 180 / Math.PI) * Math.PI / 180;
+
+            let x = Math.cos(latRad) * Math.sin(lngRad);
+            let y = Math.sin(latRad);
+            let z = Math.cos(latRad) * Math.cos(lngRad);
+
+            const factor = 1 + lift;
+            x *= factor; y *= factor; z *= factor;
+
+            const y2 = y * Math.cos(this.tilt) - z * Math.sin(this.tilt);
+            const z2 = y * Math.sin(this.tilt) + z * Math.cos(this.tilt);
+
+            const px = this.centerX + x * this.radius;
+            const py = this.centerY - y2 * this.radius;
+
+            if (z2 > -0.1) {
+                ctx.fillStyle = '#fff';
+                ctx.shadowColor = '#fff';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        // 目标点 - 中国
+        const pulseSize = 5 + Math.sin(time * 0.003) * 2;
+        ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
+        ctx.shadowColor = 'rgba(0, 255, 136, 1)';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(targetProj.x, targetProj.y, pulseSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 目标光环
+        ctx.strokeStyle = 'rgba(0, 255, 136, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(targetProj.x, targetProj.y, pulseSize + 8 + Math.sin(time * 0.002) * 4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+    },
+
+    setAttackSources(sources) {
+        this.attackSources = sources;
+    },
+
+    animate() {
+        const ctx = this.ctx;
+        const time = Date.now();
+
+        // 清除
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // 旋转
+        this.rotation += this.speed;
+
+        // 绘制星空背景
+        this.drawStars(time);
+
+        // 绘制地球
+        this.drawGlobe();
+
+        // 绘制大陆点
+        this.drawLand();
+
+        // 绘制粒子
+        this.drawParticles();
+
+        // 绘制攻击线
+        this.drawAttacks(time);
+
+        requestAnimationFrame(() => this.animate());
+    }
+};
+
+// 替代原来的 renderAttackLines 和 renderMapParticles
+function renderAttackLines(sources) {
+    if (Globe && Globe.setAttackSources) {
+        Globe.setAttackSources(sources);
+    }
+}
+
+function renderMapParticles() {
+    // 已在 Globe 中实现
+}
+
+// 初始化加载
+loadSituationData();
+setInterval(loadSituationData, 30000);
+
+// 初始化地球
+setTimeout(() => {
+    Globe.init();
+}, 100);
+
+// 窗口大小变化时重绘
+window.addEventListener('resize', () => {
+    if (situationData) {
+        renderTrendChart(situationData.recent_7days);
+        renderTypePie(situationData.phishing_types);
+        renderRiskPie(situationData.overview);
+        renderHourlyChart(situationData.hourly_chart);
+    }
+});
+</script>
+{% endblock %}

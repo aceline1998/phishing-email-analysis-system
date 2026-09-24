@@ -1,0 +1,18 @@
+# Docker 构建时忽略的文件
+.git
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.env
+data
+log
+logs
+build
+dist
+*.exe
+*.spec
+*.log
+cookies.txt
+.DS_Store

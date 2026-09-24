@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}回复模板 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">回复模板管理</span>
+        <button class="btn btn-primary btn-sm" id="btn-add-template" onclick="showTemplateModal()" style="display:none;">+ 新增模板</button>
+    </div>
+    <table class="table" id="templates-table">
+        <thead>
+            <tr><th>名称</th><th>类型</th><th>主题</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="modal-overlay" id="template-modal">
+    <div class="modal" style="width:700px;">
+        <div class="modal-header">
+            <span class="modal-title" id="template-modal-title">新增回复模板</span>
+            <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="template-form">
+                <input type="hidden" id="template-id">
+                <div class="form-group">
+                    <label class="form-label">模板名称</label>
+                    <input type="text" class="form-input" id="template-name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">模板类型</label>
+                    <select class="form-select" id="template-type">
+                        <option value="phishing">钓鱼邮件警告</option>
+                        <option value="normal">正常邮件通知</option>
+                        <option value="clicked">已点击紧急处置</option>
+                        <option value="custom">自定义</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮件主题</label>
+                    <input type="text" class="form-input" id="template-subject" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮件正文</label>
+                    <textarea class="form-textarea" id="template-body" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="template-active" checked> 启用</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeTemplateModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveTemplate()">保存</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function initTemplatesPage() {
+    if (typeof currentUser !== 'undefined' && currentUser !== null) {
+        if (currentUser.role === 'admin') {
+            document.getElementById('btn-add-template').style.display = 'inline-flex';
+        }
+        loadTemplates();
+        return;
+    }
+    
+    const checkInterval = setInterval(() => {
+        if (typeof currentUser !== 'undefined' && currentUser !== null) {
+            clearInterval(checkInterval);
+            if (currentUser.role === 'admin') {
+                document.getElementById('btn-add-template').style.display = 'inline-flex';
+            }
+            loadTemplates();
+        }
+    }, 50);
+    
+    setTimeout(() => {
+        clearInterval(checkInterval);
+    }, 5000);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTemplatesPage);
+} else {
+    initTemplatesPage();
+}
+
+async function loadTemplates() {
+    try {
+        const data = await apiRequest('/api/reply-templates');
+        const tbody = document.querySelector('#templates-table tbody');
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:40px;">暂无模板</td></tr>';
+            return;
+        }
+        const isAdminUser = typeof currentUser !== 'undefined' && currentUser !== null && currentUser.role === 'admin';
+        tbody.innerHTML = data.map(t => {
+            const typeMap = { phishing: '钓鱼警告', normal: '正常通知', clicked: '紧急处置', custom: '自定义' };
+            const actions = isAdminUser ? `<td>
+                    <button class="btn btn-sm btn-secondary" onclick="editTemplate(${t.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id})">删除</button>
+                </td>` : '<td>-</td>';
+            return `<tr>
+                <td>${t.name}</td>
+                <td>${typeMap[t.type] || t.type}</td>
+                <td>${t.subject_template}</td>
+                <td><span class="badge ${t.is_active ? 'badge-normal' : 'badge-pending'}">${t.is_active ? '启用' : '禁用'}</span></td>
+                ${actions}
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        showAlert('加载模板失败: ' + e.message, 'error');
+    }
+}
+
+function showTemplateModal() {
+    document.getElementById('template-form').reset();
+    document.getElementById('template-id').value = '';
+    document.getElementById('template-modal-title').textContent = '新增回复模板';
+    document.getElementById('template-modal').classList.add('active');
+}
+function closeTemplateModal() { document.getElementById('template-modal').classList.remove('active'); }
+
+async function saveTemplate() {
+    const id = document.getElementById('template-id').value;
+    const payload = {
+        name: document.getElementById('template-name').value,
+        type: document.getElementById('template-type').value,
+        subject_template: document.getElementById('template-subject').value,
+        body_template: document.getElementById('template-body').value,
+        is_active: document.getElementById('template-active').checked
+    };
+    try {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/reply-templates/${id}` : '/api/reply-templates';
+        await apiRequest(url, { method, body: JSON.stringify(payload) });
+        closeTemplateModal();
+        loadTemplates();
+        showAlert('保存成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function editTemplate(id) {
+    try {
+        const data = await apiRequest('/api/reply-templates');
+        const t = data.find(x => x.id === id);
+        if (!t) return;
+        document.getElementById('template-id').value = t.id;
+        document.getElementById('template-name').value = t.name;
+        document.getElementById('template-type').value = t.type;
+        document.getElementById('template-subject').value = t.subject_template;
+        document.getElementById('template-body').value = t.body_template;
+        document.getElementById('template-active').checked = t.is_active;
+        document.getElementById('template-modal-title').textContent = '编辑回复模板';
+        document.getElementById('template-modal').classList.add('active');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function deleteTemplate(id) {
+    if (!confirm('确定删除该模板？')) return;
+    try {
+        await apiRequest(`/api/reply-templates/${id}`, { method: 'DELETE' });
+        loadTemplates();
+        showAlert('删除成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+</script>
+{% endblock %}

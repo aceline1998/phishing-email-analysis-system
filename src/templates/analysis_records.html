@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}分析记录 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">分析记录列表</span>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="exportRecords()">导出记录</button>
+        </div>
+    </div>
+    <table class="table" id="records-table">
+        <thead>
+            <tr><th>发件人邮箱</th><th>邮件主题</th><th>判定结果</th><th>风险等级</th><th>置信度</th><th>钓鱼类型</th><th>收到时间</th><th>分析时间</th><th>当前状态</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="pagination" class="pagination"></div>
+</div>
+
+<div class="modal-overlay" id="record-detail-modal">
+    <div class="modal" style="width:95%; max-width:1200px;" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">分析详情</span>
+            <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="record-detail-body"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDetailModal()">关闭</button>
+            <button class="btn btn-primary" id="btn-download-eml" onclick="downloadCurrentEmail()">下载原邮件(.eml)</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let currentEmailId = null;
+
+function cleanEmailBody(body) {
+    if (!body) return '';
+    let lines = body.split('\n');
+    let result = [];
+    let emptyCount = 0;
+    for (let line of lines) {
+        if (line.trim() === '') {
+            emptyCount++;
+            if (emptyCount <= 1) {
+                result.push('');
+            }
+        } else {
+            emptyCount = 0;
+            result.push(line.trim());
+        }
+    }
+    return result.join('\n');
+}
+
+function decodeRFC2047(text) {
+    if (!text) return text;
+    let decoded = text;
+    let prev;
+    do {
+        prev = decoded;
+        decoded = decoded.replace(/=\?([^?]+)\?([BQ])\?([^?]+)\?=/gi, function(match, charset, encoding, encoded) {
+            try {
+                if (encoding.toUpperCase() === 'B') {
+                    const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                } else {
+                    let qp = encoded.replace(/_/g, ' ');
+                    qp = qp.replace(/=([0-9A-F]{2})/gi, function(m, hex) {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    });
+                    const bytes = Uint8Array.from(qp.split('').map(c => c.charCodeAt(0)));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                }
+            } catch (e) {
+                return match;
+            }
+        });
+    } while (decoded !== prev);
+    return decoded;
+}
+
+async function loadRecords() {
+    try {
+        const data = await apiRequest(`/api/analysis-records?page=${currentPage}&per_page=20`);
+        const tbody = document.querySelector('#records-table tbody');
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;padding:40px;">暂无分析记录</td></tr>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+        tbody.innerHTML = data.items.map(r => {
+            const resultBadge = r.is_phishing
+                ? '<span class="badge badge-phishing">钓鱼邮件</span>'
+                : '<span class="badge badge-normal">正常邮件</span>';
+            const riskTag = r.risk_level ? `<span class="tag tag-${r.risk_level}">${formatRiskLevel(r.risk_level)}</span>` : '-';
+            const statusMap = { 'pending': 'badge-pending', 'analyzed': 'badge-analyzed', 'replied': 'badge-replied' };
+            const statusTextMap = { 'pending': '待处理', 'analyzed': '已分析', 'replied': '已回复' };
+            
+            return `<tr>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.from_email}">${r.from_email}</td>
+                <td title="${r.subject}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.subject ? r.subject.substring(0, 50) + (r.subject.length > 50 ? '...' : '') : '-'}</td>
+                <td>${resultBadge}</td>
+                <td>${riskTag}</td>
+                <td>${(r.confidence * 100).toFixed(1)}%</td>
+                <td>${r.phishing_type || '-'}</td>
+                <td>${formatDate(r.received_at)}</td>
+                <td>${formatDate(r.analyzed_at)}</td>
+                <td><span class="badge ${statusMap[r.status] || 'badge-pending'}">${statusTextMap[r.status] || r.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="showDetail(${r.email_id})">查看</button>
+                    <button class="btn btn-sm btn-primary" onclick="downloadEmail(${r.email_id})">下载eml</button>
+                </td>
+            </tr>`;
+        }).join('');
+
+        let pagesHtml = '';
+        pagesHtml += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(1)">首页</button>`;
+        pagesHtml += `<button ${currentPage === 1 ? 'disabled' : ''} onclick="goPage(${currentPage - 1})">上一页</button>`;
+        
+        const totalPages = data.pages;
+        let startPage = Math.max(1, currentPage - 2);
+        let endPage = Math.min(totalPages, currentPage + 2);
+        
+        if (startPage > 1) {
+            pagesHtml += `<button onclick="goPage(1)">1</button>`;
+            if (startPage > 2) {
+                pagesHtml += `<span style="color:var(--text-muted);padding:0 4px;">...</span>`;
+            }
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            pagesHtml += `<button class="${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+        }
+        
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                pagesHtml += `<span style="color:var(--text-muted);padding:0 4px;">...</span>`;
+            }
+            pagesHtml += `<button onclick="goPage(${totalPages})">${totalPages}</button>`;
+        }
+        
+        pagesHtml += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${currentPage + 1})">下一页</button>`;
+        pagesHtml += `<button ${currentPage === totalPages ? 'disabled' : ''} onclick="goPage(${totalPages})">末页</button>`;
+        
+        document.getElementById('pagination').innerHTML = pagesHtml;
+    } catch (e) {
+        showAlert('加载分析记录失败: ' + e.message, 'error');
+    }
+}
+
+function goPage(p) { currentPage = p; loadRecords(); }
+
+function showDetail(emailId) {
+    window.location.href = '/email/' + emailId;
+}
+
+function closeDetailModal() {
+    document.getElementById('record-detail-modal').classList.remove('active');
+    currentEmailId = null;
+}
+
+document.getElementById('record-detail-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeDetailModal();
+    }
+});
+
+function downloadEmail(emailId) {
+    window.open(`/api/emails/${emailId}/download`, '_blank');
+}
+
+function downloadCurrentEmail() {
+    if (currentEmailId) {
+        downloadEmail(currentEmailId);
+    }
+}
+
+async function exportRecords() {
+    let content = '发件人邮箱,邮件主题,判定结果,风险等级,置信度,钓鱼类型,收到时间,分析时间,当前状态\n';
+    let page = 1;
+    let hasMore = true;
+    
+    while (hasMore) {
+        try {
+            const data = await apiRequest(`/api/analysis-records?page=${page}&per_page=100`);
+            if (!data.items || data.items.length === 0) {
+                hasMore = false;
+                break;
+            }
+            data.items.forEach(r => {
+                const result = r.is_phishing ? '钓鱼邮件' : '正常邮件';
+                content += `"${r.from_email}","${r.subject || ''}","${result}","${r.risk_level || ''}",${(r.confidence * 100).toFixed(1)},"${r.phishing_type || ''}","${r.received_at || ''}","${r.analyzed_at || ''}","${r.status}"\n`;
+            });
+            if (page >= data.pages) hasMore = false;
+            page++;
+        } catch (e) {
+            hasMore = false;
+        }
+    }
+    
+    const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `分析记录_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    showAlert('记录已导出', 'success');
+}
+
+loadRecords();
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+# 钓鱼邮件智能分析系统 - Docker Compose 一键部署
+# 用法：docker compose up -d --build
+# 可通过 .env 文件覆盖以下变量（默认值已内置，开箱即用）
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: phishing_agent
+      MYSQL_USER: phishing
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-phishing123456}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 容器内网默认不暴露端口，因此不设密码；如需密码请取消注释并同步修改 app 的 REDIS_PASSWORD
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: phishing
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-phishing123456}
+      MYSQL_DATABASE: phishing_agent
+      MYSQL_CHARSET: utf8mb4
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: 0
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  mysql_data:
+  redis_data:

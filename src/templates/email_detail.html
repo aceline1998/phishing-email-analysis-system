@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}邮件详情 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="card-title">邮件详情</span>
+        <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary btn-sm" onclick="history.back()">返回列表</button>
+            <button class="btn btn-primary btn-sm" id="btn-analyze" onclick="analyzeCurrentEmail()" style="display:none;">AI分析</button>
+            <button class="btn btn-success btn-sm" id="btn-reply" onclick="showReplyModal()" style="display:none;">回复邮件</button>
+        </div>
+    </div>
+    <div id="email-detail-content" style="padding:20px;">
+        <div style="text-align:center;padding:40px;color:var(--text-muted);">加载中...</div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="reply-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">回复邮件</span>
+            <button class="modal-close" onclick="closeReplyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">选择模板</label>
+                <select class="form-select" id="reply-template-select">
+                    <option value="">不使用模板（手动填写）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">主题</label>
+                <input type="text" class="form-input" id="reply-subject">
+            </div>
+            <div class="form-group">
+                <label class="form-label">正文</label>
+                <textarea class="form-textarea" id="reply-body"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeReplyModal()">取消</button>
+            <button class="btn btn-primary" onclick="sendReply()">发送分析结果回复</button>
+            <button class="btn btn-success" onclick="sendCustomReply()">发送自定义回复</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentEmailId = null;
+let templates = [];
+
+function getEmailIdFromUrl() {
+    const path = window.location.pathname;
+    const parts = path.split('/');
+    return parts[parts.length - 1];
+}
+
+function decodeRFC2047(text) {
+    if (!text) return text;
+    let decoded = text;
+    let prev;
+    do {
+        prev = decoded;
+        decoded = decoded.replace(/=\?([^?]+)\?([BQ])\?([^?]+)\?=/gi, function(match, charset, encoding, encoded) {
+            try {
+                if (encoding.toUpperCase() === 'B') {
+                    const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                } else {
+                    let qp = encoded.replace(/_/g, ' ');
+                    qp = qp.replace(/=([0-9A-F]{2})/gi, function(m, hex) {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    });
+                    const bytes = Uint8Array.from(qp.split('').map(c => c.charCodeAt(0)));
+                    return new TextDecoder(charset, {fatal: false}).decode(bytes);
+                }
+            } catch (e) {
+                return match;
+            }
+        });
+    } while (decoded !== prev);
+    return decoded;
+}
+
+function cleanEmailBody(body) {
+    if (!body) return '';
+    let lines = body.split('\n');
+    let result = [];
+    let emptyCount = 0;
+    for (let line of lines) {
+        if (line.trim() === '') {
+            emptyCount++;
+            if (emptyCount <= 1) {
+                result.push('');
+            }
+        } else {
+            emptyCount = 0;
+            result.push(line.trim());
+        }
+    }
+    return result.join('\n');
+}
+
+async function loadEmailDetail() {
+    currentEmailId = getEmailIdFromUrl();
+    if (!currentEmailId || isNaN(currentEmailId)) {
+        document.getElementById('email-detail-content').innerHTML = '<div style="text-align:center;padding:40px;color:#ff6b6b;">无效的邮件ID</div>';
+        return;
+    }
+    try {
+        const email = await apiRequest(`/api/emails/${currentEmailId}`);
+        let attachmentsHtml = '';
+        if (email.attachments) {
+            const attachmentList = email.attachments.split(',').map(a => a.trim()).filter(a => a);
+            attachmentsHtml = `<div class="email-attachments">
+                <div class="email-attachments-title">📎 附件 (${attachmentList.length})</div>
+                ${attachmentList.map(name => `<div class="email-attachment-item">📄 ${decodeRFC2047(name)}</div>`).join('')}
+            </div>`;
+        }
+
+        let leftHtml = `
+            <div class="email-meta">
+                <div class="email-meta-item"><strong>发件人:</strong> ${email.from_email}</div>
+                <div class="email-meta-item"><strong>收件人:</strong> ${email.to_email || '-'}</div>
+                <div class="email-meta-item"><strong>主题:</strong> ${email.subject || '(无主题)'}</div>
+                <div class="email-meta-item"><strong>收到时间:</strong> ${formatDate(email.received_at)}</div>
+            </div>
+            <div class="email-body">${cleanEmailBody(email.body) || '(无正文)'}</div>
+            ${attachmentsHtml}
+        `;
+
+        let rightHtml = '';
+        if (email.analysis) {
+            const isPhishing = email.analysis.is_phishing;
+            rightHtml = `<div class="analysis-card">
+                <div class="analysis-card-title">🤖 AI分析结果</div>
+                <div class="analysis-row">
+                    <span class="analysis-label">判定:</span>
+                    <span class="${isPhishing ? 'analysis-value-phishing' : 'analysis-value-normal'}">${isPhishing ? '钓鱼邮件' : '正常邮件'}</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">置信度:</span>
+                    <span class="analysis-value">${(email.analysis.confidence * 100).toFixed(1)}%</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-label">风险等级:</span>
+                    <span class="tag tag-${email.analysis.risk_level}">${formatRiskLevel(email.analysis.risk_level)}</span>
+                </div>
+                ${email.analysis.phishing_type ? `<div class="analysis-row">
+                    <span class="analysis-label">钓鱼类型:</span>
+                    <span class="analysis-value">${email.analysis.phishing_type}</span>
+                </div>` : ''}
+                ${email.analysis.indicators ? `<div class="analysis-row">
+                    <span class="analysis-label">特征指标:</span>
+                    <span class="analysis-value">${email.analysis.indicators}</span>
+                </div>` : ''}
+                <div class="analysis-report-box">${email.analysis.analysis_report}</div>
+            </div>`;
+        } else {
+            rightHtml = `<div class="analysis-card">
+                <div class="analysis-card-title">🤖 AI分析结果</div>
+                <div style="color:var(--text-muted);font-size:13px;text-align:center;padding:20px;">
+                    暂无分析结果<br>点击下方"AI分析"按钮进行分析
+                </div>
+            </div>`;
+        }
+
+        if (email.replies && email.replies.length > 0) {
+            rightHtml += `<div class="analysis-card">
+                <div class="analysis-card-title">✉️ 已发送回复</div>`;
+            email.replies.forEach(r => {
+                rightHtml += `<div style="padding:10px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:8px;">
+                        <strong style="font-size:13px;">${r.subject}</strong>
+                        <span style="color:var(--text-muted);font-size:12px;">${formatDate(r.sent_at)}</span>
+                        <div style="margin-top:6px;white-space:pre-wrap;font-size:13px;color:var(--text-secondary);">${r.body}</div>
+                    </div>`;
+            });
+            rightHtml += '</div>';
+        }
+
+        let html = `<div class="email-detail-container">
+            <div class="email-detail-left">${leftHtml}</div>
+            <div class="email-detail-right">${rightHtml}</div>
+        </div>`;
+
+        document.getElementById('email-detail-content').innerHTML = html;
+
+        if (isAdmin()) {
+            document.getElementById('btn-analyze').style.display = email.analysis ? 'none' : 'inline-flex';
+            document.getElementById('btn-reply').style.display = email.status === 'replied' ? 'none' : 'inline-flex';
+        }
+    } catch (e) {
+        document.getElementById('email-detail-content').innerHTML = `<div style="text-align:center;padding:40px;color:#ff6b6b;">加载失败: ${e.message}</div>`;
+    }
+}
+
+async function analyzeCurrentEmail() {
+    if (!currentEmailId) return;
+    const btn = document.getElementById('btn-analyze');
+    btn.innerHTML = '<span class="loading"></span> 分析中...';
+    btn.disabled = true;
+    try {
+        const result = await apiRequest(`/api/emails/${currentEmailId}/analyze`, { method: 'POST' });
+        showAlert('分析完成: ' + (result.is_phishing ? '钓鱼邮件' : '正常邮件'), result.is_phishing ? 'error' : 'success');
+        loadEmailDetail();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        btn.innerHTML = 'AI分析';
+        btn.disabled = false;
+    }
+}
+
+async function loadTemplates() {
+    try {
+        templates = await apiRequest('/api/reply-templates');
+        const select = document.getElementById('reply-template-select');
+        select.innerHTML = '<option value="">不使用模板（手动填写）</option>' +
+            templates.map(t => `<option value="${t.id}">${t.name} (${t.type})</option>`).join('');
+    } catch (e) {}
+}
+
+document.getElementById('reply-template-select').addEventListener('change', function() {
+    const tpl = templates.find(t => t.id == this.value);
+    if (tpl) {
+        document.getElementById('reply-subject').value = tpl.subject_template;
+        document.getElementById('reply-body').value = tpl.body_template;
+    }
+});
+
+function showReplyModal() {
+    document.getElementById('reply-subject').value = '';
+    document.getElementById('reply-body').value = '';
+    document.getElementById('reply-template-select').value = '';
+    document.getElementById('reply-modal').classList.add('active');
+}
+function closeReplyModal() { document.getElementById('reply-modal').classList.remove('active'); }
+
+async function sendReply() {
+    if (!currentEmailId) return;
+    const payload = { use_analysis_template: true };
+    try {
+        await apiRequest(`/api/emails/${currentEmailId}/reply`, { method: 'POST', body: JSON.stringify(payload) });
+        closeReplyModal();
+        showAlert('回复已发送', 'success');
+        loadEmailDetail();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function sendCustomReply() {
+    if (!currentEmailId) return;
+    const payload = {
+        use_analysis_template: false,
+        template_id: document.getElementById('reply-template-select').value || null,
+        subject: document.getElementById('reply-subject').value,
+        body: document.getElementById('reply-body').value
+    };
+    try {
+        await apiRequest(`/api/emails/${currentEmailId}/reply`, { method: 'POST', body: JSON.stringify(payload) });
+        closeReplyModal();
+        showAlert('回复已发送', 'success');
+        loadEmailDetail();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+loadEmailDetail();
+loadTemplates();
+</script>
+{% endblock %}

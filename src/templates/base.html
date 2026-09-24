@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}钓鱼邮件智能分析系统{% endblock %}</title>
+    <style>
+        :root {
+            --primary: #00d4ff;
+            --primary-dark: #0099cc;
+            --secondary: #0f2847;
+            --bg-dark: #050a14;
+            --bg-card: rgba(15, 40, 71, 0.8);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255,255,255,0.7);
+            --text-muted: rgba(255,255,255,0.5);
+            --border-color: rgba(0, 212, 255, 0.2);
+            --glow-color: rgba(0, 212, 255, 0.5);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Roboto, 'PingFang SC', sans-serif; 
+            background: var(--bg-dark); 
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .navbar { 
+            background: rgba(5, 10, 20, 0.95); 
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary); 
+            padding: 0 24px; 
+            display: flex; 
+            align-items: center; 
+            height: 60px; 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            z-index: 100;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+        }
+        .navbar-brand { 
+            font-size: 16px; 
+            font-weight: 600; 
+            margin-right: 30px;
+            background: linear-gradient(90deg, var(--primary), #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .navbar-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), #0099cc);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 
+                0 0 20px rgba(0, 212, 255, 0.5),
+                inset 0 0 10px rgba(255,255,255,0.2);
+            animation: logoGlow 2s ease-in-out infinite;
+        }
+        @keyframes logoGlow {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.5), inset 0 0 10px rgba(255,255,255,0.2); }
+            50% { box-shadow: 0 0 30px rgba(0, 212, 255, 0.8), inset 0 0 15px rgba(255,255,255,0.3); }
+        }
+        .navbar-nav { display: flex; list-style: none; gap: 4px; flex: 1; align-items: center; }
+        .navbar-nav li { display: flex; align-items: center; }
+        .navbar-nav a { 
+            color: var(--text-secondary); 
+            text-decoration: none; 
+            padding: 10px 18px; 
+            border-radius: 6px; 
+            font-size: 14px; 
+            font-weight: 500;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .navbar-nav a:hover { 
+            color: var(--primary); 
+            background: rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
+        }
+        .navbar-nav a.active { 
+            color: var(--primary); 
+            background: rgba(0, 212, 255, 0.15);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        .navbar-nav a.active::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 3px;
+            background: var(--primary);
+            border-radius: 2px;
+            box-shadow: 0 0 10px var(--primary);
+        }
+        .navbar-right { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+        .navbar-right a { color: var(--text-secondary); text-decoration: none; }
+        .navbar-right a:hover { color: var(--primary); }
+        .user-info { display: flex; align-items: center; gap: 8px; }
+        .badge-admin { 
+            background: linear-gradient(135deg, #ff6b6b, #ff4757); 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            font-weight: 600;
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+        }
+        .main-container { 
+            margin-top: 60px; 
+            padding: 24px 2%; 
+            max-width: none; 
+            width: 100%;
+            margin-left: auto; 
+            margin-right: auto;
+            position: relative;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            will-change: opacity;
+            min-height: calc(100vh - 60px - 80px);
+            box-sizing: border-box;
+        }
+        
+        .main-container.loaded {
+            opacity: 1;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(5, 10, 20, 0.98);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .loading-ring {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(0, 212, 255, 0.2);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.2s ease;
+        }
+        
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+        .card { 
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px; 
+            padding: 24px; 
+            margin-bottom: 24px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 30px rgba(0, 212, 255, 0.15);
+        }
+        .card-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 20px; 
+            padding-bottom: 16px; 
+            border-bottom: 1px solid var(--border-color);
+        }
+        .card-title { 
+            font-size: 18px; 
+            font-weight: 600; 
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .card-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(180deg, var(--primary), transparent);
+            border-radius: 2px;
+        }
+        .btn { 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            font-weight: 500;
+            transition: all 0.3s ease; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        .btn:hover::before { left: 100%; }
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark)); 
+            color: #fff; 
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
+        }
+        .btn-primary:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 212, 255, 0.6);
+        }
+        .btn-success { 
+            background: linear-gradient(135deg, #00ff88, #00cc6a); 
+            color: #000; 
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+        }
+        .btn-success:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 255, 136, 0.6);
+        }
+        .btn-danger { 
+            background: linear-gradient(135deg, #ff6b6b, #ff4757); 
+            color: #fff; 
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        }
+        .btn-danger:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(255, 71, 87, 0.6);
+        }
+        .btn-secondary { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        .btn-secondary:hover { 
+            background: rgba(255,255,255,0.15); 
+            border-color: var(--primary);
+        }
+        .btn-sm { padding: 6px 14px; font-size: 13px; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-size: 14px; 
+            font-weight: 500; 
+            color: var(--text-secondary); 
+        }
+        .form-input, .form-select, .form-textarea { 
+            width: 100%; 
+            padding: 12px 16px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            font-size: 14px; 
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus { 
+            outline: none; 
+            border-color: var(--primary);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+            background: rgba(255,255,255,0.08);
+        }
+        .form-input::placeholder, .form-textarea::placeholder {
+            color: var(--text-muted);
+        }
+        .form-textarea { min-height: 120px; resize: vertical; }
+
+        .form-select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300d4ff' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+            padding-right: 40px;
+        }
+
+        .form-select option {
+            background: #0f2847;
+            color: #ffffff;
+        }
+        .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .table th, .table td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
+        .table th { 
+            background: rgba(0, 212, 255, 0.1); 
+            font-weight: 600; 
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+        .table tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .badge { 
+            padding: 5px 12px; 
+            border-radius: 20px; 
+            font-size: 12px; 
+            font-weight: 600;
+            backdrop-filter: blur(5px);
+        }
+        .badge-phishing { 
+            background: rgba(255, 71, 87, 0.2); 
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 71, 87, 0.3);
+        }
+        .badge-normal { 
+            background: rgba(0, 255, 136, 0.2); 
+            color: #00ff88;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+        .badge-pending { 
+            background: rgba(255, 152, 0, 0.2); 
+            color: #ff9800;
+            border: 1px solid rgba(255, 152, 0, 0.3);
+        }
+        .badge-analyzed { 
+            background: rgba(0, 212, 255, 0.2); 
+            color: var(--primary);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+        .badge-replied { 
+            background: rgba(156, 39, 176, 0.2); 
+            color: #ce93d8;
+            border: 1px solid rgba(156, 39, 176, 0.3);
+        }
+        .alert { 
+            padding: 14px 18px; 
+            border-radius: 6px; 
+            margin-bottom: 16px; 
+            font-size: 14px; 
+            backdrop-filter: blur(5px);
+            border: 1px solid transparent;
+        }
+        .alert-info { 
+            background: rgba(0, 212, 255, 0.15); 
+            color: var(--primary); 
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+        .alert-success { 
+            background: rgba(0, 255, 136, 0.15); 
+            color: #00ff88; 
+            border-color: rgba(0, 255, 136, 0.3);
+        }
+        .alert-error { 
+            background: rgba(255, 71, 87, 0.15); 
+            color: #ff6b6b; 
+            border-color: rgba(255, 71, 87, 0.3);
+        }
+        .alert-warning { 
+            background: rgba(255, 193, 7, 0.15); 
+            color: #ffc107; 
+            border-color: rgba(255, 193, 7, 0.3);
+        }
+        .tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border-color); margin-bottom: 24px; }
+        .tab { 
+            padding: 12px 24px; 
+            cursor: pointer; 
+            border-bottom: 2px solid transparent; 
+            margin-bottom: -2px; 
+            font-size: 14px; 
+            font-weight: 500; 
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+            background: transparent;
+        }
+        .tab:hover { color: var(--text-secondary); }
+        .tab.active { 
+            color: var(--primary); 
+            border-bottom-color: var(--primary);
+            background: rgba(0, 212, 255, 0.05);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px; }
+        .stat-card { 
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px; 
+            padding: 24px; 
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .stat-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 8px 30px rgba(0, 212, 255, 0.2);
+            transform: translateY(-5px);
+        }
+        .stat-card:hover::before { opacity: 1; }
+        .stat-value { 
+            font-size: 36px; 
+            font-weight: 700; 
+            color: var(--text-primary);
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+        .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+        .modal-overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            background: rgba(5, 10, 20, 0.85); 
+            backdrop-filter: blur(5px);
+            display: none; 
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+        .modal-overlay.active { display: block; }
+        .modal { 
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px; 
+            width: 600px; 
+            max-width: calc(100vw - 40px); 
+            max-height: calc(100vh - 40px); 
+            display: flex;
+            flex-direction: column;
+            animation: modalFadeIn 0.3s ease;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            margin: 0;
+            overflow: hidden;
+        }
+        @keyframes modalFadeIn { 
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); } 
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); } 
+        }
+        .modal-header { 
+            padding: 20px 24px; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .modal-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+        .modal-close { 
+            background: rgba(255,255,255,0.1); 
+            border: none; 
+            width: 32px; 
+            height: 32px; 
+            border-radius: 50%;
+            cursor: pointer; 
+            color: var(--text-secondary);
+            font-size: 18px;
+            transition: all 0.3s ease;
+        }
+        .modal-close:hover { 
+            background: rgba(255,255,255,0.2); 
+            color: var(--primary);
+        }
+        .modal-body { padding: 24px; flex: 1; overflow-y: auto; min-height: 0; }
+        .modal-footer { 
+            padding: 16px 24px; 
+            border-top: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: flex-end; 
+            gap: 10px; 
+            flex-shrink: 0;
+        }
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .loading { 
+            display: inline-block; 
+            width: 18px; 
+            height: 18px; 
+            border: 2px solid var(--border-color); 
+            border-top-color: var(--primary); 
+            border-radius: 50%; 
+            animation: spin 0.8s linear infinite; 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .analysis-report { 
+            background: rgba(0, 212, 255, 0.05); 
+            border: 1px solid var(--border-color);
+            padding: 16px; 
+            border-radius: 8px; 
+            font-size: 14px; 
+            line-height: 1.8; 
+            white-space: pre-wrap;
+            color: var(--text-secondary);
+        }
+        .email-body {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            color: var(--text-primary);
+            word-break: break-word;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .email-meta {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 14px;
+        }
+        .email-meta-item {
+            margin-bottom: 6px;
+        }
+        .email-meta-item strong {
+            color: var(--text-secondary);
+            min-width: 70px;
+            display: inline-block;
+        }
+        .email-attachments {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 6px;
+        }
+        .email-attachments-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .email-attachment-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .file-upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 32px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(0, 212, 255, 0.02);
+        }
+        .file-upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(0, 212, 255, 0.08);
+        }
+        .file-upload-area.drag-over {
+            border-color: var(--primary);
+            background: rgba(0, 212, 255, 0.12);
+        }
+        .file-upload-icon {
+            font-size: 36px;
+            margin-bottom: 12px;
+        }
+        .file-upload-text {
+            font-size: 15px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .file-upload-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .file-upload-selected {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+        }
+        .file-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: rgba(0, 212, 255, 0.15);
+            border: 1px solid var(--primary);
+            border-radius: 16px;
+            font-size: 12px;
+            color: var(--primary);
+        }
+        .email-detail-container {
+            display: flex;
+            gap: 24px;
+            height: 100%;
+            overflow: hidden;
+        }
+        .email-detail-left {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            min-width: 0;
+            padding-right: 8px;
+        }
+        .email-detail-right {
+            width: 400px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding-left: 8px;
+        }
+        .analysis-card {
+            background: rgba(0, 212, 255, 0.08);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .analysis-card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .analysis-row {
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .analysis-label {
+            color: var(--text-muted);
+            display: inline-block;
+            min-width: 70px;
+        }
+        .analysis-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .analysis-value-phishing {
+            color: #ff6b6b;
+            font-weight: 600;
+        }
+        .analysis-value-normal {
+            color: #00ff88;
+            font-weight: 600;
+        }
+        .analysis-report-box {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            color: var(--text-secondary);
+        }
+        .tag { 
+            display: inline-block; 
+            padding: 3px 10px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            margin-right: 6px;
+            font-weight: 500;
+        }
+        .tag-high { background: rgba(255, 71, 87, 0.2); color: #ff6b6b; }
+        .tag-medium { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
+        .tag-low { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .custom-checkbox {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            gap: 8px;
+        }
+        .custom-checkbox input[type="checkbox"] {
+            opacity: 0;
+            position: absolute;
+            width: 0;
+            height: 0;
+        }
+        .checkbox-custom {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            position: relative;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .custom-checkbox:hover .checkbox-custom {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+        }
+        .custom-checkbox input[type="checkbox"]:checked + .checkbox-custom {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+        }
+        .custom-checkbox input[type="checkbox"]:checked + .checkbox-custom::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 2px;
+            transform: rotate(45deg);
+            box-shadow: 0 0 5px rgba(255,255,255,0.5);
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+        .pagination button {
+            padding: 8px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.05);
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 36px;
+        }
+        .pagination button:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(0,212,255,0.1);
+        }
+        .pagination button.active {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border-color: var(--primary);
+            color: #000;
+            font-weight: 600;
+            box-shadow: 0 0 15px rgba(0,212,255,0.4);
+        }
+        .pagination button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .filter-bar { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+        .filter-bar input[type="date"], .filter-bar select { 
+            padding: 10px 14px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            font-size: 14px;
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        .filter-bar select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300d4ff' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+        .filter-bar select option {
+            background: #0f2847;
+            color: #ffffff;
+        }
+        .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.7);
+            cursor: pointer;
+        }
+        .footer {
+            background: rgba(5, 10, 20, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid var(--border-color);
+            padding: 20px 48px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+            margin-top: auto;
+        }
+        .footer-left, .footer-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .footer-text {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .footer-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.3s;
+        }
+        .footer-link:hover {
+            color: var(--primary);
+        }
+        .footer-version {
+            color: var(--primary);
+            font-size: 12px;
+            font-family: monospace;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .main-container {
+            flex: 1;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+    <div class="navbar-logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M12 2L1 21h22L12 2zm0 3.46l6.37 11.36-.63.38-7-4.23-7 4.23-.63-.38L12 5.46z"/>
+        </svg>
+    </div>
+    <span>钓鱼邮件智能分析系统</span>
+</div>
+        <ul class="navbar-nav">
+            <li><a href="/" id="nav-dashboard">首页</a></li>
+            <li><a href="/situation" id="nav-situation">态势大屏</a></li>
+            <li><a href="/statistics" id="nav-statistics">统计分析</a></li>
+            <li><a href="/analysis-records" id="nav-analysis-records">分析记录</a></li>
+            <li><a href="/threat-intel" id="nav-threat-intel">威胁情报</a></li>
+            <li><a href="/chat" id="nav-chat">AI问答</a></li>
+            <li><a href="/task-queue" id="nav-task-queue">任务队列</a></li>
+            {% if session.get('role') == 'admin' %}
+            <li><a href="/audit" id="nav-audit">审计日志</a></li>
+            {% endif %}
+            <li><a href="/emails" id="nav-emails">邮件管理</a></li>
+            <li><a href="/templates" id="nav-templates">回复模板</a></li>
+            {% if session.get('role') == 'admin' %}
+            <li><a href="/config" id="nav-config">系统配置</a></li>
+            {% endif %}
+        </ul>
+        <div class="navbar-right">
+            <span id="version-display" style="color:var(--text-muted);font-size:12px;margin-right:16px;">V1.0</span>
+            <span id="current-time" style="color:var(--primary);font-size:14px;margin-right:16px;"></span>
+            <div class="user-dropdown" id="user-dropdown" style="display:none; position:relative;">
+                <div class="user-info" style="cursor:pointer; padding:8px 16px; border-radius:6px; transition:all 0.3s;" onclick="toggleUserMenu()">
+                    <span id="username-display"></span>
+                    <span id="role-badge"></span>
+                    <span style="margin-left:8px;font-size:12px;">▼</span>
+                </div>
+                <div class="user-menu" id="user-menu" style="display:none; position:absolute; right:0; top:100%; margin-top:8px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.4); min-width:180px; z-index:200; backdrop-filter:blur(10px);">
+                    <a href="/config" style="display:block; padding:12px 16px; color:var(--text-secondary); text-decoration:none; border-bottom:1px solid var(--border-color); transition:all 0.3s;">个人设置</a>
+                    <a href="/version" id="menu-version" style="display:none; padding:12px 16px; color:var(--text-secondary); text-decoration:none; border-bottom:1px solid var(--border-color); transition:all 0.3s;">版本管理</a>
+                    <a href="#" onclick="showChangePasswordModal(); return false;" style="display:block; padding:12px 16px; color:var(--text-secondary); text-decoration:none; border-bottom:1px solid var(--border-color); transition:all 0.3s;">修改密码</a>
+                    <a href="#" onclick="logout(); return false;" style="display:block; padding:12px 16px; color:#ff6b6b; text-decoration:none; transition:all 0.3s;">退出登录</a>
+                </div>
+            </div>
+            <a href="/login" id="login-link">登录</a>
+        </div>
+    </nav>
+    <div class="main-container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="footer">
+        <div class="footer-left">
+            <span class="footer-text">© 2026 钓鱼邮件智能分析系统</span>
+            <a href="/" class="footer-link">首页</a>
+            <a href="/statistics" class="footer-link">统计分析</a>
+            <a href="/analysis-records" class="footer-link">分析记录</a>
+            {% if session.get('role') == 'admin' %}
+            <a href="/config" class="footer-link">系统配置</a>
+            {% endif %}
+        </div>
+        <div class="footer-right">
+            <span class="footer-version" id="footer-version">V1.0</span>
+            <span class="footer-text">筑牢网络防线，共享清朗空间</span>
+        </div>
+    </footer>
+
+    <div class="loading-overlay" id="page-loading">
+        <div class="loading-ring"></div>
+    </div>
+
+    <div class="modal-overlay" id="change-pwd-modal">
+        <div class="modal" style="width:420px;">
+            <div class="modal-header">
+                <span class="modal-title">修改密码</span>
+                <button class="modal-close" onclick="closeChangePasswordModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="change-pwd-form-modal">
+                    <div class="form-group">
+                        <label class="form-label">旧密码</label>
+                        <input type="password" class="form-input" id="modal-old-password" placeholder="请输入旧密码" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">新密码</label>
+                        <input type="password" class="form-input" id="modal-new-password" placeholder="请输入新密码" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">确认新密码</label>
+                        <input type="password" class="form-input" id="modal-confirm-password" placeholder="请再次输入新密码" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeChangePasswordModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitChangePassword()">确定</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const path = window.location.pathname;
+        document.querySelectorAll('.navbar-nav a').forEach(a => {
+            if (a.getAttribute('href') === path) a.classList.add('active');
+            a.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href && href !== '#' && href !== window.location.pathname) {
+                    showLoading();
+                }
+            });
+        });
+        
+        function showLoading() {
+            const loading = document.getElementById('page-loading');
+            const container = document.querySelector('.main-container');
+            if (loading) {
+                loading.classList.remove('hidden');
+            }
+            if (container) {
+                container.classList.remove('loaded');
+            }
+        }
+        
+        function hideLoading() {
+            const loading = document.getElementById('page-loading');
+            const container = document.querySelector('.main-container');
+            if (loading) {
+                loading.classList.add('hidden');
+            }
+            if (container) {
+                container.classList.add('loaded');
+            }
+        }
+        
+        let currentUser = null;
+
+        async function apiRequest(url, options = {}) {
+            try {
+                const resp = await fetch(url, { 
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', ...options.headers }, 
+                    ...options 
+                });
+                
+                if (resp.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                
+                const contentType = resp.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('服务器返回非JSON响应: ' + resp.status + ' ' + resp.statusText);
+                }
+                
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || '请求失败');
+                }
+                return data;
+            } catch (e) {
+                throw e;
+            }
+        }
+
+        async function checkLogin() {
+        try {
+            const data = await apiRequest('/api/current-user');
+            currentUser = data;
+            document.getElementById('user-dropdown').style.display = 'flex';
+            document.getElementById('username-display').textContent = data.username;
+            document.getElementById('role-badge').textContent = data.role === 'admin' ? '管理员' : '普通用户';
+            document.getElementById('role-badge').className = data.role === 'admin' ? 'badge-admin' : '';
+            document.getElementById('login-link').style.display = 'none';
+            if (data.role === 'admin') {
+                document.getElementById('menu-version').style.display = 'block';
+            }
+        } catch (e) {
+            if (path !== '/login') {
+                window.location.href = '/login';
+            }
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    async function loadVersion() {
+        try {
+            const resp = await fetch('/api/version');
+            if (resp.ok) {
+                const data = await resp.json();
+                const el = document.getElementById('version-display');
+                if (el) el.textContent = data.version;
+                const fel = document.getElementById('footer-version');
+                if (fel) fel.textContent = data.version;
+            }
+        } catch (e) {
+            console.log('Failed to load version:', e);
+        }
+    }
+    loadVersion();
+    
+    window.addEventListener('load', hideLoading);
+
+    function toggleUserMenu() {
+        const menu = document.getElementById('user-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showAlert('已复制到剪贴板', 'success');
+            }).catch(() => {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showAlert('已复制到剪贴板', 'success');
+        } catch (e) {
+            showAlert('复制失败，请手动复制', 'error');
+        }
+        document.body.removeChild(textarea);
+    }
+
+    document.addEventListener('click', function(e) {
+        const dropdown = document.getElementById('user-dropdown');
+        const menu = document.getElementById('user-menu');
+        if (dropdown && !dropdown.contains(e.target) && menu.style.display === 'block') {
+            menu.style.display = 'none';
+        }
+    });
+
+        async function logout() {
+            try {
+                await apiRequest('/api/logout', { method: 'POST' });
+                currentUser = null;
+                window.location.href = '/login';
+            } catch (e) {
+                showAlert(e.message, 'error');
+            }
+        }
+
+        function showAlert(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `alert alert-${type}`;
+            div.textContent = message;
+            const container = document.querySelector('.main-container');
+            if (container) {
+                container.insertBefore(div, container.firstChild);
+                setTimeout(() => div.remove(), 5000);
+            }
+        }
+
+        function formatDate(str) {
+            if (!str) return '-';
+            const d = new Date(str);
+            return d.toLocaleString('zh-CN');
+        }
+
+        function formatRiskLevel(level) {
+            const map = { 'high': '高危', 'medium': '中危', 'low': '低危' };
+            return map[level] || level || '-';
+        }
+
+        function isAdmin() {
+            return currentUser && currentUser.role === 'admin';
+        }
+
+        function showChangePasswordModal() {
+            document.getElementById('user-menu').style.display = 'none';
+            document.getElementById('change-pwd-form-modal').reset();
+            document.getElementById('change-pwd-modal').classList.add('active');
+        }
+
+        function closeChangePasswordModal() {
+            document.getElementById('change-pwd-modal').classList.remove('active');
+        }
+
+        async function submitChangePassword() {
+            const oldPwd = document.getElementById('modal-old-password').value;
+            const newPwd = document.getElementById('modal-new-password').value;
+            const confirmPwd = document.getElementById('modal-confirm-password').value;
+
+            if (!oldPwd || !newPwd || !confirmPwd) {
+                showAlert('请填写所有字段', 'error');
+                return;
+            }
+
+            if (newPwd !== confirmPwd) {
+                showAlert('两次输入的新密码不一致', 'error');
+                return;
+            }
+
+            try {
+                const result = await apiRequest('/api/change-password', {
+                    method: 'POST',
+                    body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+                });
+                if (result.success) {
+                    showAlert('密码修改成功', 'success');
+                    closeChangePasswordModal();
+                } else {
+                    showAlert(result.message || '修改失败', 'error');
+                }
+            } catch (e) {
+                showAlert(e.message, 'error');
+            }
+        }
+
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('current-time').textContent = timeStr;
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+        
+        checkLogin();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 环境变量（含敏感信息，勿提交）
+.env
+
+# 运行时数据与日志
+data/sys_config.json
+data/phishing.db
+data/migration_status.json
+log/
+logs/
+*.log
+.secret_key
+
+# 打包产物
+build/
+dist/
+*.exe
+*.spec
+*.pyc
+
+# 其他
+cookies.txt
+.DS_Store

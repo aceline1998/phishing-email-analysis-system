@@ -1,0 +1,1118 @@
+{% extends "base.html" %}
+{% block title %}系统配置 - 钓鱼邮件智能分析系统{% endblock %}
+{% block content %}
+<div class="tabs">
+    <div class="tab" data-tab="db-config" style="display:none;">数据库配置</div>
+    <div class="tab active" data-tab="mail-config">邮件服务器</div>
+    <div class="tab" data-tab="llm-config">大模型配置</div>
+    <div class="tab" data-tab="app-config">应用配置</div>
+    <div class="tab" data-tab="pipeline-config">并发与流水线</div>
+    <div class="tab" data-tab="security-advice">安全处置建议</div>
+    <div class="tab" data-tab="user-config" id="tab-user-config" style="display:none;">用户管理</div>
+</div>
+
+<div class="tab-content" id="db-config">
+    <div class="card">
+        <div class="card-header"><span class="card-title">数据库连接配置</span></div>
+        <div class="alert alert-info">系统已配置使用MySQL数据库，无需手动配置。</div>
+    </div>
+</div>
+
+<div class="tab-content active" id="mail-config">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">邮件服务器配置</span>
+            <button class="btn btn-primary btn-sm" onclick="showMailModal()">+ 新增邮件服务器</button>
+        </div>
+        <table class="table" id="mail-servers-table">
+            <thead>
+                <tr><th>名称</th><th>IMAP服务器</th><th>SMTP服务器</th><th>邮箱账号</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="tab-content" id="llm-config">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">大模型配置</span>
+            <button class="btn btn-primary btn-sm" onclick="showLLMModal()">+ 新增模型配置</button>
+        </div>
+        <table class="table" id="llm-configs-table">
+            <thead>
+                <tr><th>名称</th><th>API地址</th><th>模型名称</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="tab-content" id="app-config">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">应用配置</span>
+        </div>
+        <form id="app-form">
+            <div class="form-group">
+                <label class="form-label">自动收取邮件间隔（分钟，0表示禁用）</label>
+                <input type="number" class="form-input" id="auto-interval" value="5" min="0" max="1440" step="1">
+                <p style="font-size:12px;color:#888;margin-top:4px;">设置自动从邮箱收取新邮件的时间间隔，单位为分钟。设置为 0 可禁用自动收取。修改后立即生效，无需重启服务。</p>
+            </div>
+            <button type="submit" class="btn btn-primary">保存应用配置</button>
+        </form>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">服务管理</span>
+        </div>
+        <div style="padding:20px;">
+            <button class="btn btn-danger" onclick="restartService()">重启服务</button>
+            <p style="font-size:12px;color:#888;margin-top:12px;">重启服务将使配置更改生效，重启期间服务暂时不可用</p>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">服务器网络信息</span>
+        </div>
+        <div style="padding:20px;">
+            <div id="ip-info-container">
+                <div style="display:flex;align-items:center;margin-bottom:12px;">
+                    <span style="color:rgba(255,255,255,0.7);width:100px;">主机名：</span>
+                    <span id="hostname-display" style="color:#00d4ff;font-family:monospace;">{{ server_hostname }}</span>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <span style="color:rgba(255,255,255,0.7);">IPv4 地址：</span>
+                    <div id="ipv4-list" style="margin-top:8px;">
+                        {% if server_ipv4 %}
+                            {% for ip in server_ipv4 %}
+                            <div style="margin-bottom:6px;">
+                                <span style="color:#00ff88;font-family:monospace;">{{ ip }}</span>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <span style="color:#888;">未检测到IPv4地址</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div>
+                    <span style="color:rgba(255,255,255,0.7);">IPv6 地址：</span>
+                    <div id="ipv6-list" style="margin-top:8px;">
+                        {% if server_ipv6 %}
+                            {% for ip in server_ipv6 %}
+                            <div style="margin-bottom:6px;">
+                                <span style="color:#00ff88;font-family:monospace;">{{ ip }}</span>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <span style="color:#888;">未检测到IPv6地址</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+                    <span style="color:rgba(255,255,255,0.7);">服务端口：</span>
+                    <span style="color:#00ff88;">80</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tab-content" id="pipeline-config">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">并发与流水线配置</span>
+        </div>
+        <div class="alert alert-info">配置邮件处理的并发参数和自动化流水线，支持批量分析和自动回复功能。</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+            <div>
+                <h4 style="margin-bottom:12px;color:#00d4ff;">自动化流水线</h4>
+                <div class="form-group">
+                    <label class="custom-checkbox">
+                        <input type="checkbox" id="auto-analyze">
+                        <span class="checkbox-custom"></span>
+                        <span>自动分析新邮件</span>
+                    </label>
+                    <p style="font-size:12px;color:#888;margin-top:4px;">获取新邮件后自动提交到分析队列</p>
+                </div>
+                <div class="form-group">
+                    <label class="custom-checkbox">
+                        <input type="checkbox" id="auto-reply">
+                        <span class="checkbox-custom"></span>
+                        <span>分析后自动回复</span>
+                    </label>
+                    <p style="font-size:12px;color:#888;margin-top:4px;">分析完成后自动发送分析结果回复邮件</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">自动检查间隔（秒）</label>
+                    <input type="number" class="form-input" id="auto-check-interval" min="10" max="3600" value="60">
+                    <p style="font-size:12px;color:#888;margin-top:4px;">每隔多少秒自动收取邮件并分析待处理邮件（建议60秒）</p>
+                </div>
+            </div>
+            <div>
+                <h4 style="margin-bottom:12px;color:#00d4ff;">并发参数</h4>
+                <div class="form-group">
+                    <label class="form-label">回复邮件发件人名称</label>
+                    <input type="text" class="form-input" id="sender-display-name" placeholder="如：安全室" value="安全室" maxlength="50">
+                    <p style="font-size:12px;color:#888;margin-top:4px;">对方收到回复邮件时显示的发件人名称</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">分析并发数（同时分析线程数）</label>
+                    <input type="number" class="form-input" id="analysis-workers" min="1" max="20" value="3">
+                    <p style="font-size:12px;color:#888;margin-top:4px;">同时进行的大模型分析任务数</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">回复并发数（同时发送线程数）</label>
+                    <input type="number" class="form-input" id="reply-workers" min="1" max="10" value="2">
+                    <p style="font-size:12px;color:#888;margin-top:4px;">同时进行的邮件发送任务数</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">回复限流（封/分钟）</label>
+                    <input type="number" class="form-input" id="reply-rate-limit" min="1" max="500" value="30">
+                    <p style="font-size:12px;color:#888;margin-top:4px;">每分钟最多发送的回复邮件数量</p>
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="savePipelineConfig()">保存并发配置</button>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+            <span class="card-title">任务队列实时状态</span>
+            <button class="btn btn-secondary btn-sm" onclick="refreshQueueStatus()">刷新</button>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; margin-bottom:16px;">
+            <div class="stat-card" style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;padding:16px;text-align:center;">
+                <div style="font-size:28px;font-weight:bold;color:#00d4ff;" id="stat-pending">0</div>
+                <div style="font-size:12px;color:#888;margin-top:4px;">等待中</div>
+            </div>
+            <div class="stat-card" style="background:rgba(255,193,7,0.1);border:1px solid rgba(255,193,7,0.3);border-radius:8px;padding:16px;text-align:center;">
+                <div style="font-size:28px;font-weight:bold;color:#ffc107;" id="stat-running">0</div>
+                <div style="font-size:12px;color:#888;margin-top:4px;">执行中</div>
+            </div>
+            <div class="stat-card" style="background:rgba(0,255,136,0.1);border:1px solid rgba(0,255,136,0.3);border-radius:8px;padding:16px;text-align:center;">
+                <div style="font-size:28px;font-weight:bold;color:#00ff88;" id="stat-completed">0</div>
+                <div style="font-size:12px;color:#888;margin-top:4px;">已完成</div>
+            </div>
+            <div class="stat-card" style="background:rgba(255,68,68,0.1);border:1px solid rgba(255,68,68,0.3);border-radius:8px;padding:16px;text-align:center;">
+                <div style="font-size:28px;font-weight:bold;color:#ff4444;" id="stat-failed">0</div>
+                <div style="font-size:12px;color:#888;margin-top:4px;">失败</div>
+            </div>
+            <div class="stat-card" style="background:rgba(156,39,176,0.1);border:1px solid rgba(156,39,176,0.3);border-radius:8px;padding:16px;text-align:center;">
+                <div style="font-size:28px;font-weight:bold;color:#9c27b0;" id="stat-total">0</div>
+                <div style="font-size:12px;color:#888;margin-top:4px;">总任务</div>
+            </div>
+        </div>
+        <div style="margin-bottom:12px;">
+            <span style="color:var(--text-secondary);font-size:13px;">分析队列: <span id="analysis-queue-size" style="color:#00d4ff;">0</span> | 回复队列: <span id="reply-queue-size" style="color:#00d4ff;">0</span> | 分析并发: <span id="analysis-workers-display" style="color:#00d4ff;">3</span> | 回复并发: <span id="reply-workers-display" style="color:#00d4ff;">2</span></span>
+        </div>
+        <h4 style="margin-bottom:10px;color:#00d4ff;font-size:14px;">最近任务</h4>
+        <table class="table" id="queue-tasks-table">
+            <thead>
+                <tr><th>任务ID</th><th>类型</th><th>状态</th><th>重试</th><th>错误信息</th><th>创建时间</th><th>完成时间</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="tab-content" id="security-advice">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">安全处置建议配置</span>
+        </div>
+        <div class="alert alert-info">配置邮件分析结果回复中的安全处置建议内容。钓鱼邮件和非钓鱼邮件可设置不同的建议内容。</div>
+        <form id="security-form">
+            <div class="form-group">
+                <label class="form-label">钓鱼邮件处置建议</label>
+                <textarea class="form-textarea" id="phishing-advice" rows="6" placeholder="当邮件被判定为钓鱼邮件时，回复邮件中包含的处置建议..."></textarea>
+                <p style="font-size:12px;color:#888;margin-top:4px;">此内容将作为【安全处置建议】部分发送给邮件上报者</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">非钓鱼邮件处置建议</label>
+                <textarea class="form-textarea" id="normal-advice" rows="6" placeholder="当邮件被判定为非钓鱼邮件时，回复邮件中包含的处置建议..."></textarea>
+                <p style="font-size:12px;color:#888;margin-top:4px;">此内容将作为【安全处置建议】部分发送给邮件上报者</p>
+            </div>
+            <button type="submit" class="btn btn-primary">保存安全处置建议</button>
+        </form>
+    </div>
+</div>
+
+<div class="tab-content" id="user-config">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">用户管理</span>
+            <button class="btn btn-primary btn-sm" onclick="showUserModal()">+ 新增用户</button>
+        </div>
+        <table class="table" id="users-table">
+            <thead>
+                <tr><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">个人设置</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+            <div>
+                <h4 style="margin-bottom:12px;color:#1a237e;">绑定邮箱</h4>
+                <form id="bind-email-form">
+                    <div class="form-group">
+                        <label class="form-label">当前邮箱</label>
+                        <input type="text" class="form-input" id="current-email" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">新邮箱</label>
+                        <input type="email" class="form-input" id="new-email" placeholder="请输入新邮箱地址">
+                        <p style="font-size:12px;color:#888;margin-top:4px;">绑定邮箱后可用于忘记密码时接收验证码</p>
+                    </div>
+                    <button type="submit" class="btn btn-primary">保存邮箱</button>
+                </form>
+            </div>
+            <div>
+                <h4 style="margin-bottom:12px;color:#1a237e;">修改密码</h4>
+                <form id="change-pwd-form">
+                    <div class="form-group">
+                        <label class="form-label">旧密码</label>
+                        <input type="password" class="form-input" id="old-password" placeholder="请输入旧密码">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">新密码</label>
+                        <input type="password" class="form-input" id="new-password" placeholder="请输入新密码">
+                    </div>
+                    <button type="submit" class="btn btn-primary">修改密码</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="mail-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="mail-modal-title">新增邮件服务器</span>
+            <button class="modal-close" onclick="closeMailModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="mail-form">
+                <input type="hidden" id="mail-id">
+                <div class="form-group">
+                    <label class="form-label">配置名称</label>
+                    <input type="text" class="form-input" id="mail-name" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">IMAP服务器</label>
+                        <input type="text" class="form-input" id="mail-imap-server" placeholder="imap.example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">IMAP端口</label>
+                        <input type="number" class="form-input" id="mail-imap-port" value="993">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="mail-imap-ssl" checked> 使用SSL</label>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">SMTP服务器</label>
+                        <input type="text" class="form-input" id="mail-smtp-server" placeholder="smtp.example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">SMTP端口</label>
+                        <input type="number" class="form-input" id="mail-smtp-port" value="465">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="mail-smtp-ssl" checked> 使用SSL</label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮箱账号</label>
+                    <input type="email" class="form-input" id="mail-email" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码/授权码</label>
+                    <input type="password" class="form-input" id="mail-password" required>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="mail-active" checked> 启用</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeMailModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveMailServer()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="llm-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="llm-modal-title">新增大模型配置</span>
+            <button class="modal-close" onclick="closeLLMModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="llm-form">
+                <input type="hidden" id="llm-id">
+                <div class="form-group">
+                    <label class="form-label">配置名称</label>
+                    <input type="text" class="form-input" id="llm-name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API Base URL</label>
+                    <input type="text" class="form-input" id="llm-api-url" value="https://api.deepseek.com/v1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">模型名称</label>
+                    <input type="text" class="form-input" id="llm-model" value="deepseek-chat" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <input type="password" class="form-input" id="llm-api-key" placeholder="请输入API Key" required>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="llm-active" checked> 启用</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeLLMModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveLLMConfig()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="user-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="user-modal-title">新增用户</span>
+            <button class="modal-close" onclick="closeUserModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="user-form">
+                <input type="hidden" id="user-id">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" class="form-input" id="user-name" required>
+                </div>
+                <div class="form-group" id="user-password-group">
+                    <label class="form-label">密码</label>
+                    <input type="password" class="form-input" id="user-password" placeholder="请输入密码">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮箱</label>
+                    <input type="email" class="form-input" id="user-email" placeholder="选填，用于找回密码">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">角色</label>
+                    <select class="form-select" id="user-role">
+                        <option value="user">普通用户</option>
+                        <option value="admin">管理员</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="user-active" checked> 启用</label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeUserModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveUser()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="send-email-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">发送测试邮件</span>
+            <button class="modal-close" onclick="closeSendEmailModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="send-email-form">
+                <input type="hidden" id="send-server-id">
+                <div class="form-group">
+                    <label class="form-label">收件人邮箱</label>
+                    <input type="email" class="form-input" id="send-to-email" required placeholder="请输入收件人邮箱地址">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮件主题</label>
+                    <input type="text" class="form-input" id="send-subject" value="测试邮件" placeholder="请输入邮件主题">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">邮件内容</label>
+                    <textarea class="form-textarea" id="send-body" rows="6" placeholder="请输入邮件内容...">这是一封测试邮件，用于验证邮件服务器配置是否正常。
+
+发送时间：{{ current_time }}
+测试用途：邮件连通性测试</textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeSendEmailModal()">取消</button>
+            <button class="btn btn-primary" onclick="sendTestEmail()">发送邮件</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'mail-config') loadMailServers();
+        if (tab.dataset.tab === 'llm-config') loadLLMConfigs();
+        if (tab.dataset.tab === 'user-config') loadUsers();
+        if (tab.dataset.tab === 'app-config') loadAppConfig();
+        if (tab.dataset.tab === 'pipeline-config') loadPipelineConfig();
+    });
+});
+
+// 等待用户信息加载完成后再显示管理员功能
+function checkAdminAndShow() {
+    if (typeof currentUser !== 'undefined' && currentUser !== null) {
+        if (currentUser.role === 'admin') {
+            document.getElementById('tab-user-config').style.display = 'block';
+        }
+    } else {
+        setTimeout(checkAdminAndShow, 100);
+    }
+}
+checkAdminAndShow();
+
+// 数据库配置已硬编码，无需前端表单
+
+async function loadAppConfig() {
+    try {
+        const data = await apiRequest('/api/system/config');
+        document.getElementById('auto-interval').value = data.app.auto_check_interval / 60 || 5;
+    } catch (e) {
+        showAlert('加载应用配置失败: ' + e.message, 'error');
+    }
+}
+
+document.getElementById('app-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const interval = parseInt(document.getElementById('auto-interval').value) * 60;
+    try {
+        await apiRequest('/api/system/config', {
+            method: 'POST',
+            body: JSON.stringify({ app: { auto_check_interval: interval } })
+        });
+        showAlert('应用配置已保存，间隔变更立即生效', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+});
+
+async function restartService() {
+    if (!confirm('确定要重启服务吗？重启期间服务将暂时不可用。')) return;
+    try {
+        const data = await apiRequest('/api/system/restart', { method: 'POST' });
+        showAlert(data.message, 'info');
+        setTimeout(() => window.location.reload(), 3000);
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function loadMailServers() {
+    try {
+        const data = await apiRequest('/api/mail-servers');
+        const tbody = document.querySelector('#mail-servers-table tbody');
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">暂无配置</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map(s => `
+            <tr>
+                <td>${s.name}</td>
+                <td>${s.imap_server}:${s.imap_port}</td>
+                <td>${s.smtp_server}:${s.smtp_port}</td>
+                <td>${s.email}</td>
+                <td><span class="badge ${s.is_active ? 'badge-normal' : 'badge-pending'}">${s.is_active ? '启用' : '禁用'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="testMailServer(${s.id})">测试</button>
+                    <button class="btn btn-sm btn-primary" onclick="showSendTestEmailModal(${s.id})">发邮件</button>
+                    <button class="btn btn-sm btn-secondary" onclick="editMailServer(${s.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteMailServer(${s.id})">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        showAlert('加载邮件服务器失败: ' + e.message, 'error');
+    }
+}
+
+function showMailModal() {
+    document.getElementById('mail-form').reset();
+    document.getElementById('mail-id').value = '';
+    document.getElementById('mail-modal-title').textContent = '新增邮件服务器';
+    document.getElementById('mail-modal').classList.add('active');
+}
+function closeMailModal() { document.getElementById('mail-modal').classList.remove('active'); }
+
+async function saveMailServer() {
+    const id = document.getElementById('mail-id').value;
+    const payload = {
+        name: document.getElementById('mail-name').value,
+        imap_server: document.getElementById('mail-imap-server').value,
+        imap_port: parseInt(document.getElementById('mail-imap-port').value),
+        imap_ssl: document.getElementById('mail-imap-ssl').checked,
+        smtp_server: document.getElementById('mail-smtp-server').value,
+        smtp_port: parseInt(document.getElementById('mail-smtp-port').value),
+        smtp_ssl: document.getElementById('mail-smtp-ssl').checked,
+        email: document.getElementById('mail-email').value,
+        password: document.getElementById('mail-password').value,
+        is_active: document.getElementById('mail-active').checked
+    };
+    try {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/mail-servers/${id}` : '/api/mail-servers';
+        await apiRequest(url, { method, body: JSON.stringify(payload) });
+        closeMailModal();
+        loadMailServers();
+        showAlert('保存成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function editMailServer(id) {
+    try {
+        const servers = await apiRequest('/api/mail-servers');
+        const s = servers.find(x => x.id === id);
+        if (!s) return;
+        document.getElementById('mail-id').value = s.id;
+        document.getElementById('mail-name').value = s.name;
+        document.getElementById('mail-imap-server').value = s.imap_server;
+        document.getElementById('mail-imap-port').value = s.imap_port;
+        document.getElementById('mail-imap-ssl').checked = s.imap_ssl;
+        document.getElementById('mail-smtp-server').value = s.smtp_server;
+        document.getElementById('mail-smtp-port').value = s.smtp_port;
+        document.getElementById('mail-smtp-ssl').checked = s.smtp_ssl;
+        document.getElementById('mail-email').value = s.email;
+        document.getElementById('mail-password').value = '';
+        document.getElementById('mail-active').checked = s.is_active;
+        document.getElementById('mail-modal-title').textContent = '编辑邮件服务器';
+        document.getElementById('mail-modal').classList.add('active');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function deleteMailServer(id) {
+    if (!confirm('确定删除该邮件服务器配置？')) return;
+    try {
+        await apiRequest(`/api/mail-servers/${id}`, { method: 'DELETE' });
+        loadMailServers();
+        showAlert('删除成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function testMailServer(id) {
+    try {
+        const result = await apiRequest(`/api/mail-servers/${id}/test`, { method: 'POST' });
+        showAlert(result.message, result.imap && result.smtp ? 'success' : 'error');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function loadLLMConfigs() {
+    try {
+        const data = await apiRequest('/api/llm-configs');
+        const tbody = document.querySelector('#llm-configs-table tbody');
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:40px;">暂无配置</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map(c => `
+            <tr>
+                <td>${c.name}</td>
+                <td>${c.api_base_url}</td>
+                <td>${c.model_name}</td>
+                <td><span class="badge ${c.is_active ? 'badge-normal' : 'badge-pending'}">${c.is_active ? '启用' : '禁用'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="testLLMConfig(${c.id})">测试</button>
+                    <button class="btn btn-sm btn-secondary" onclick="editLLMConfig(${c.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteLLMConfig(${c.id})">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        showAlert('加载大模型配置失败: ' + e.message, 'error');
+    }
+}
+
+function showLLMModal() {
+    document.getElementById('llm-form').reset();
+    document.getElementById('llm-id').value = '';
+    document.getElementById('llm-api-url').value = 'https://api.deepseek.com/v1';
+    document.getElementById('llm-model').value = 'deepseek-chat';
+    document.getElementById('llm-modal-title').textContent = '新增大模型配置';
+    document.getElementById('llm-modal').classList.add('active');
+}
+function closeLLMModal() { document.getElementById('llm-modal').classList.remove('active'); }
+
+async function saveLLMConfig() {
+    const id = document.getElementById('llm-id').value;
+    const payload = {
+        name: document.getElementById('llm-name').value,
+        api_base_url: document.getElementById('llm-api-url').value,
+        api_key: document.getElementById('llm-api-key').value,
+        model_name: document.getElementById('llm-model').value,
+        is_active: document.getElementById('llm-active').checked
+    };
+    try {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/llm-configs/${id}` : '/api/llm-configs';
+        await apiRequest(url, { method, body: JSON.stringify(payload) });
+        closeLLMModal();
+        loadLLMConfigs();
+        showAlert('保存成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function editLLMConfig(id) {
+    try {
+        const configs = await apiRequest('/api/llm-configs');
+        const c = configs.find(x => x.id === id);
+        if (!c) return;
+        document.getElementById('llm-id').value = c.id;
+        document.getElementById('llm-name').value = c.name;
+        document.getElementById('llm-api-url').value = c.api_base_url;
+        document.getElementById('llm-model').value = c.model_name;
+        document.getElementById('llm-api-key').value = '';
+        document.getElementById('llm-active').checked = c.is_active;
+        document.getElementById('llm-modal-title').textContent = '编辑大模型配置';
+        document.getElementById('llm-modal').classList.add('active');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function deleteLLMConfig(id) {
+    if (!confirm('确定删除该大模型配置？')) return;
+    try {
+        await apiRequest(`/api/llm-configs/${id}`, { method: 'DELETE' });
+        loadLLMConfigs();
+        showAlert('删除成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function testLLMConfig(id) {
+    try {
+        const result = await apiRequest(`/api/llm-configs/${id}/test`, { method: 'POST' });
+        showAlert(result.message, result.success ? 'success' : 'error');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function loadUsers() {
+    try {
+        const data = await apiRequest('/api/users');
+        const tbody = document.querySelector('#users-table tbody');
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">暂无用户</td></tr>';
+            return;
+        }
+        tbody.innerHTML = data.map(u => `
+            <tr>
+                <td>${u.username}</td>
+                <td>${u.email || '-'}</td>
+                <td><span class="badge ${u.role === 'admin' ? 'badge-phishing' : 'badge-normal'}">${u.role === 'admin' ? '管理员' : '普通用户'}</span></td>
+                <td><span class="badge ${u.is_active ? 'badge-normal' : 'badge-pending'}">${u.is_active ? '启用' : '禁用'}</span></td>
+                <td>${u.created_at}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="editUser(${u.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        showAlert('加载用户失败: ' + e.message, 'error');
+    }
+}
+
+function showUserModal() {
+    document.getElementById('user-form').reset();
+    document.getElementById('user-id').value = '';
+    document.getElementById('user-password-group').style.display = 'block';
+    document.getElementById('user-password').required = true;
+    document.getElementById('user-modal-title').textContent = '新增用户';
+    document.getElementById('user-modal').classList.add('active');
+}
+function closeUserModal() { document.getElementById('user-modal').classList.remove('active'); }
+
+async function saveUser() {
+    const id = document.getElementById('user-id').value;
+    const payload = {
+        username: document.getElementById('user-name').value,
+        email: document.getElementById('user-email').value,
+        role: document.getElementById('user-role').value,
+        is_active: document.getElementById('user-active').checked
+    };
+    if (document.getElementById('user-password').value) {
+        payload.password = document.getElementById('user-password').value;
+    }
+    try {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/users/${id}` : '/api/users';
+        await apiRequest(url, { method, body: JSON.stringify(payload) });
+        closeUserModal();
+        loadUsers();
+        showAlert('保存成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function editUser(id) {
+    try {
+        const users = await apiRequest('/api/users');
+        const u = users.find(x => x.id === id);
+        if (!u) return;
+        document.getElementById('user-id').value = u.id;
+        document.getElementById('user-name').value = u.username;
+        document.getElementById('user-email').value = u.email || '';
+        document.getElementById('user-role').value = u.role;
+        document.getElementById('user-active').checked = u.is_active;
+        document.getElementById('user-password').value = '';
+        document.getElementById('user-password-group').style.display = 'block';
+        document.getElementById('user-password').required = false;
+        document.getElementById('user-modal-title').textContent = '编辑用户';
+        document.getElementById('user-modal').classList.add('active');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function deleteUser(id) {
+    if (!confirm('确定删除该用户？')) return;
+    try {
+        await apiRequest(`/api/users/${id}`, { method: 'DELETE' });
+        loadUsers();
+        showAlert('删除成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+document.getElementById('change-pwd-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    try {
+        await apiRequest('/api/change-password', {
+            method: 'POST',
+            body: JSON.stringify({
+                old_password: document.getElementById('old-password').value,
+                new_password: document.getElementById('new-password').value
+            })
+        });
+        showAlert('密码修改成功', 'success');
+        this.reset();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+});
+
+document.getElementById('bind-email-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    try {
+        await apiRequest('/api/update-email', {
+            method: 'POST',
+            body: JSON.stringify({
+                email: document.getElementById('new-email').value
+            })
+        });
+        document.getElementById('current-email').value = document.getElementById('new-email').value;
+        document.getElementById('new-email').value = '';
+        showAlert('邮箱绑定成功', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+});
+
+async function loadCurrentUser() {
+    try {
+        const data = await apiRequest('/api/current-user');
+        document.getElementById('current-email').value = data.email || '未绑定';
+    } catch (e) {
+        console.log('加载当前用户信息失败:', e.message);
+    }
+}
+
+async function loadMigrationStatus() {
+    try {
+        const data = await apiRequest('/api/system/migration-status');
+        const container = document.getElementById('migration-status');
+        if (!data.last_migration) {
+            container.innerHTML = '<p style="color:rgba(255,255,255,0.5);font-size:13px;">暂无迁移记录</p>';
+        } else {
+            container.innerHTML = `
+                <div style="margin-bottom:8px;">
+                    <span style="color:rgba(255,255,255,0.7);">上次迁移时间：</span>
+                    <span style="color:#00d4ff;">${new Date(data.last_migration).toLocaleString('zh-CN')}</span>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <span style="color:rgba(255,255,255,0.7);">迁移表数量：</span>
+                    <span style="color:#00ff88;">${data.migrated_tables.length} 个表</span>
+                </div>
+                <div style="font-size:12px;color:rgba(255,255,255,0.5);">
+                    已迁移表：${data.migrated_tables.join(', ') || '无'}
+                </div>
+            `;
+        }
+    } catch (e) {
+        console.log('加载迁移状态失败:', e.message);
+    }
+}
+
+async function manualMigrate() {
+    const btn = document.getElementById('btn-migrate');
+    btn.innerHTML = '<span class="loading"></span> 迁移中...';
+    btn.disabled = true;
+    try {
+        const result = await apiRequest('/api/system/migrate-db', { method: 'POST' });
+        if (result.success) {
+            showAlert(result.message, 'success');
+            loadMigrationStatus();
+        } else {
+            showAlert(result.message, 'error');
+        }
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        btn.innerHTML = '手动迁移数据';
+        btn.disabled = false;
+    }
+}
+
+async function loadPipelineConfig() {
+    try {
+        const data = await apiRequest('/api/pipeline/config');
+        document.getElementById('auto-analyze').checked = data.auto_analyze;
+        document.getElementById('auto-reply').checked = data.auto_reply;
+        document.getElementById('analysis-workers').value = data.analysis_workers;
+        document.getElementById('reply-workers').value = data.reply_workers;
+        document.getElementById('reply-rate-limit').value = data.reply_rate_limit_per_min;
+        document.getElementById('auto-check-interval').value = data.auto_check_interval || 60;
+        document.getElementById('sender-display-name').value = data.sender_display_name || '安全室';
+    } catch (e) {
+        console.log('加载流水线配置失败:', e.message);
+    }
+}
+
+async function savePipelineConfig() {
+    const autoAnalyze = document.getElementById('auto-analyze').checked;
+    const autoReply = document.getElementById('auto-reply').checked;
+    const analysisWorkers = parseInt(document.getElementById('analysis-workers').value) || 3;
+    const replyWorkers = parseInt(document.getElementById('reply-workers').value) || 2;
+    const rateLimit = parseInt(document.getElementById('reply-rate-limit').value) || 30;
+    const autoCheckInterval = parseInt(document.getElementById('auto-check-interval').value) || 60;
+    const senderDisplayName = document.getElementById('sender-display-name').value.trim() || '安全室';
+
+    try {
+        const result = await apiRequest('/api/pipeline/config', {
+            method: 'PUT',
+            body: JSON.stringify({
+                auto_analyze: autoAnalyze,
+                auto_reply: autoReply,
+                analysis_workers: analysisWorkers,
+                reply_workers: replyWorkers,
+                reply_rate_limit_per_min: rateLimit,
+                auto_check_interval: autoCheckInterval,
+                sender_display_name: senderDisplayName
+            })
+        });
+        showAlert('配置已保存', 'success');
+        refreshQueueStatus();
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function refreshQueueStatus() {
+    try {
+        const data = await apiRequest('/api/queue/status');
+        document.getElementById('stat-pending').textContent = data.pending;
+        document.getElementById('stat-running').textContent = data.running;
+        document.getElementById('stat-completed').textContent = data.completed;
+        document.getElementById('stat-failed').textContent = data.failed;
+        document.getElementById('stat-total').textContent = data.total_tasks;
+        document.getElementById('analysis-queue-size').textContent = data.analysis_queue_size;
+        document.getElementById('reply-queue-size').textContent = data.reply_queue_size;
+        document.getElementById('analysis-workers-display').textContent = data.analysis_workers;
+        document.getElementById('reply-workers-display').textContent = data.reply_workers;
+
+        const tasks = await apiRequest('/api/queue/tasks?limit=20');
+        const tbody = document.querySelector('#queue-tasks-table tbody');
+        tbody.innerHTML = tasks.map(t => {
+            const errorTip = t.error ? ` title="${t.error.replace(/"/g, '&quot;')}"` : '';
+            const errorText = t.error ? (t.error.length > 30 ? t.error.substring(0, 30) + '...' : t.error) : '-';
+            return `<tr>
+                <td style="font-family:monospace;font-size:12px;">${t.id.substring(0, 8)}...</td>
+                <td>${t.task_type === 'analysis' ? '邮件分析' : '邮件回复'}</td>
+                <td><span style="color:${t.status === 'completed' ? '#00ff88' : t.status === 'failed' ? '#ff4444' : t.status === 'running' ? '#ffc107' : '#00d4ff'};">${t.status}</span></td>
+                <td>${t.retry_count}</td>
+                <td style="font-size:12px;color:#ff6b6b;max-width:200px;overflow:hidden;text-overflow:ellipsis;"${errorTip}>${errorText}</td>
+                <td style="font-size:12px;">${t.created_at || ''}</td>
+                <td style="font-size:12px;">${t.completed_at || '-'}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        console.log('刷新队列状态失败:', e.message);
+    }
+}
+
+setInterval(function() {
+    if (document.querySelector('#pipeline-config').style.display !== 'none') {
+        refreshQueueStatus();
+    }
+}, 5000);
+
+async function loadSecurityAdvice() {
+    try {
+        const data = await apiRequest('/api/security-advice');
+        document.getElementById('phishing-advice').value = data.phishing_advice || '';
+        document.getElementById('normal-advice').value = data.normal_advice || '';
+    } catch (e) {
+        console.log('加载安全处置建议失败:', e.message);
+    }
+}
+
+document.getElementById('security-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const phishingAdvice = document.getElementById('phishing-advice').value;
+    const normalAdvice = document.getElementById('normal-advice').value;
+
+    try {
+        const result = await apiRequest('/api/security-advice', {
+            method: 'POST',
+            body: JSON.stringify({
+                phishing_advice: phishingAdvice,
+                normal_advice: normalAdvice
+            })
+        });
+        if (result.success) {
+            showAlert(result.message, 'success');
+        }
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+});
+
+loadMailServers();
+loadCurrentUser();
+loadMigrationStatus();
+loadSecurityAdvice();
+loadPipelineConfig();
+
+function showSendTestEmailModal(serverId) {
+    document.getElementById('send-email-form').reset();
+    document.getElementById('send-server-id').value = serverId;
+    document.getElementById('send-subject').value = '测试邮件';
+    document.getElementById('send-body').value = '这是一封测试邮件，用于验证邮件服务器配置是否正常。\n\n发送时间：' + new Date().toLocaleString('zh-CN') + '\n测试用途：邮件连通性测试';
+    document.getElementById('send-email-modal').classList.add('active');
+}
+
+function closeSendEmailModal() {
+    document.getElementById('send-email-modal').classList.remove('active');
+}
+
+async function sendTestEmail() {
+    const toEmail = document.getElementById('send-to-email').value;
+    const subject = document.getElementById('send-subject').value;
+    const body = document.getElementById('send-body').value;
+
+    if (!toEmail) {
+        showAlert('请输入收件人邮箱', 'error');
+        return;
+    }
+
+    try {
+        const result = await apiRequest('/api/send-test-email', {
+            method: 'POST',
+            body: JSON.stringify({
+                to_email: toEmail,
+                subject: subject,
+                body: body
+            })
+        });
+        if (result.success) {
+            showAlert('邮件发送成功', 'success');
+            closeSendEmailModal();
+        } else {
+            showAlert(result.message, 'error');
+        }
+    } catch (e) {
+        showAlert(e.message, 'error');
+    }
+}
+
+async function loadIPInfo() {
+    try {
+        const resp = await fetch('/api/system/ip-info', { credentials: 'same-origin' });
+        if (resp.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        const data = await resp.json();
+        
+        document.getElementById('hostname-display').textContent = data.hostname || '未知';
+        
+        const ipv4List = document.getElementById('ipv4-list');
+        if (data.ipv4_addresses && data.ipv4_addresses.length > 0) {
+            ipv4List.innerHTML = data.ipv4_addresses.map(ip => `
+                <div style="margin-bottom:6px;">
+                    <span style="color:#00ff88;font-family:monospace;">${ip}</span>
+                </div>
+            `).join('');
+        } else {
+            ipv4List.innerHTML = '<span style="color:#888;">未检测到IPv4地址</span>';
+        }
+        
+        const ipv6List = document.getElementById('ipv6-list');
+        if (data.ipv6_addresses && data.ipv6_addresses.length > 0) {
+            ipv6List.innerHTML = data.ipv6_addresses.map(ip => `
+                <div style="margin-bottom:6px;">
+                    <span style="color:#00ff88;font-family:monospace;">${ip}</span>
+                </div>
+            `).join('');
+        } else {
+            ipv6List.innerHTML = '<span style="color:#888;">未检测到IPv6地址</span>';
+        }
+    } catch (e) {
+        console.log('加载IP信息失败:', e.message);
+        document.getElementById('hostname-display').textContent = '加载失败';
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showAlert('已复制到剪贴板', 'success');
+    }).catch(() => {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showAlert('已复制到剪贴板', 'success');
+    });
+}
+</script>
+{% endblock %}

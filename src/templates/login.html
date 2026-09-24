@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 钓鱼邮件智能分析系统</title>
+    <style>
+        :root {
+            --primary: #00d4ff;
+            --primary-dark: #0099cc;
+            --bg-dark: #050a14;
+            --bg-card: rgba(15, 40, 71, 0.6);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255,255,255,0.7);
+            --text-muted: rgba(255,255,255,0.5);
+            --border-color: rgba(0, 212, 255, 0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Roboto, 'PingFang SC', sans-serif; 
+            background: var(--bg-dark); 
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 0;
+        }
+        .background-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0,212,255,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,212,255,0.05) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+            animation: gridMove 20s linear infinite;
+        }
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(60px, 60px); }
+        }
+        .background-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(ellipse at 20% 80%, rgba(0, 212, 255, 0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at 80% 20%, rgba(0, 255, 136, 0.1) 0%, transparent 50%),
+                        radial-gradient(ellipse at 50% 50%, rgba(15, 40, 71, 0.5) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .scan-line {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            z-index: 0;
+            animation: scan 3s linear infinite;
+            opacity: 0.5;
+        }
+        @keyframes scan {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 0.5; }
+            90% { opacity: 0.5; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 40px;
+        }
+        .login-container { 
+            display: flex;
+            width: 100%;
+            max-width: 1160px;
+            min-height: 580px;
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px; 
+            position: relative;
+            box-shadow: 
+                0 0 60px rgba(0, 212, 255, 0.15),
+                0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeInUp 0.6s ease;
+            overflow: hidden;
+        }
+        @keyframes fadeInUp {
+            0% { opacity: 0; transform: translateY(30px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+            animation: shimmer 3s infinite;
+        }
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        .glow-border {
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            right: -1px;
+            bottom: -1px;
+            border-radius: 21px;
+            padding: 1px;
+            background: linear-gradient(135deg, var(--primary), transparent, var(--primary));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: borderGlow 2s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes borderGlow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+        .login-form-section {
+            flex: 1;
+            padding: 44px 48px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 1;
+        }
+        .login-feature-section {
+            flex: 1;
+            padding: 40px 40px;
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 255, 136, 0.05) 100%);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 1;
+        }
+        .logo { margin-bottom: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+        .logo-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.4);
+        }
+        .logo-text { display: flex; flex-direction: column; }
+        .logo h1 { 
+            font-size: 24px; 
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--primary), #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+            letter-spacing: 2px;
+        }
+        .logo-subtitle {
+            color: var(--text-muted);
+            font-size: 13px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            display: inline-block;
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--primary);
+            animation: typing 3s steps(12) infinite, blink 0.8s step-end infinite;
+        }
+        @keyframes typing {
+            0%, 100% { width: 0; }
+            50% { width: 100%; }
+        }
+        @keyframes blink {
+            50% { border-color: transparent; }
+        }
+        .form-group { 
+            margin-bottom: 16px; 
+            position: relative;
+        }
+        .form-label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-size: 14px; 
+            font-weight: 500; 
+            color: var(--text-secondary);
+            letter-spacing: 1px;
+        }
+        .form-input { 
+            width: 100%; 
+            padding: 14px 45px 14px 16px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            font-size: 15px; 
+            background: rgba(255,255,255,0.03);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        .form-input:focus { 
+            outline: none; 
+            border-color: var(--primary);
+            box-shadow: 
+                0 0 0 3px rgba(0, 212, 255, 0.1),
+                0 0 20px rgba(0, 212, 255, 0.3);
+            background: rgba(255,255,255,0.06);
+        }
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+        .input-icon {
+            position: absolute;
+            right: 16px;
+            top: 42px;
+            color: var(--text-muted);
+            transition: color 0.3s ease;
+            font-size: 16px;
+            line-height: 1;
+        }
+        .form-input:focus + .input-icon {
+            color: var(--primary);
+        }
+        .btn { 
+            width: 100%; 
+            padding: 14px; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: 600;
+            transition: all 0.3s ease; 
+            position: relative;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark)); 
+            color: #fff; 
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.4);
+        }
+        .btn-primary:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 212, 255, 0.6);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s ease;
+        }
+        .btn-primary:hover::before { left: 100%; }
+        .links { 
+            display: flex; 
+            justify-content: flex-end; 
+            margin-top: 16px; 
+            position: relative;
+            z-index: 10;
+        }
+        .links a { 
+            color: var(--primary); 
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            padding: 8px 16px;
+            display: inline-block;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 6px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        .links a:hover { 
+            background: rgba(0, 212, 255, 0.2);
+            border-color: var(--primary);
+            transform: translateY(-1px);
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .form-input, .form-select {
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        select.form-select option {
+            background: #0f2847;
+            color: #ffffff;
+        }
+        .alert { 
+            padding: 14px 16px; 
+            border-radius: 8px; 
+            margin-bottom: 20px; 
+            font-size: 14px;
+            backdrop-filter: blur(5px);
+            border: 1px solid transparent;
+            animation: fadeIn 0.3s ease;
+        }
+        .alert-error { 
+            background: rgba(255, 71, 87, 0.15); 
+            color: #ff6b6b; 
+            border-color: rgba(255, 71, 87, 0.3);
+        }
+        .alert-success { 
+            background: rgba(0, 255, 136, 0.15); 
+            color: #00ff88; 
+            border-color: rgba(0, 255, 136, 0.3);
+        }
+        .modal-overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            background: rgba(5, 10, 20, 0.85); 
+            backdrop-filter: blur(10px);
+            display: none; 
+            z-index: 100;
+            animation: fadeIn 0.3s ease;
+        }
+        .modal-overlay.active { display: block; }
+        .modal { 
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px; 
+            width: 460px; 
+            max-width: calc(100vw - 40px);
+            padding: 36px;
+            animation: modalFadeIn 0.3s ease;
+            box-shadow: 
+                0 0 40px rgba(0, 212, 255, 0.2),
+                0 20px 60px rgba(0,0,0,0.5);
+            margin: 0;
+        }
+        @keyframes modalFadeIn { 
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); } 
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); } 
+        }
+        .modal-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 28px; 
+        }
+        .modal-title { 
+            font-size: 20px; 
+            font-weight: 600; 
+            color: var(--text-primary);
+            background: linear-gradient(90deg, var(--primary), #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .modal-close { 
+            background: rgba(255,255,255,0.1); 
+            border: none; 
+            width: 36px; 
+            height: 36px; 
+            border-radius: 50%;
+            cursor: pointer; 
+            color: var(--text-secondary);
+            font-size: 20px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-close:hover { 
+            background: rgba(255,255,255,0.2); 
+            color: var(--primary);
+        }
+        .modal-footer { 
+            display: flex; 
+            justify-content: flex-end; 
+            gap: 12px; 
+            margin-top: 28px; 
+        }
+        .modal .form-group {
+            margin-bottom: 20px;
+        }
+        .modal .form-label {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .modal .form-input {
+            padding: 12px 45px 12px 16px;
+        }
+        .btn-secondary { 
+            background: rgba(255,255,255,0.1); 
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            width: 100px;
+            padding: 12px 20px;
+            font-size: 14px;
+        }
+        .btn-secondary:hover { 
+            background: rgba(255,255,255,0.15); 
+            border-color: var(--primary);
+        }
+        .modal .btn-primary {
+            width: 100px;
+            padding: 12px 20px;
+            font-size: 14px;
+        }
+        .loading { 
+            display: inline-block; 
+            width: 20px; 
+            height: 20px; 
+            border: 2px solid rgba(255,255,255,0.3); 
+            border-top-color: #fff; 
+            border-radius: 50%; 
+            animation: spin 0.8s linear infinite; 
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .security-badge {
+            position: absolute;
+            bottom: 16px;
+            right: 48px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .security-icon {
+            width: 12px;
+            height: 12px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .version-badge {
+            position: absolute;
+            bottom: 16px;
+            left: 48px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .feature-title {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--primary), #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 24px;
+            letter-spacing: 2px;
+        }
+        .feature-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .feature-item {
+            display: flex;
+            gap: 12px;
+            padding: 14px 16px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            border: 1px solid rgba(0,212,255,0.1);
+            transition: all 0.3s ease;
+            align-items: flex-start;
+        }
+        .feature-item:hover {
+            background: rgba(255,255,255,0.06);
+            border-color: rgba(0,212,255,0.3);
+            transform: translateX(4px);
+        }
+        .feature-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .feature-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .feature-content h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .feature-content p {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .feature-footer {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(0,212,255,0.1);
+            text-align: center;
+        }
+        .feature-footer p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="background-grid"></div>
+    <div class="background-gradient"></div>
+    <div class="scan-line"></div>
+    <canvas id="particles"></canvas>
+    
+    <div class="login-wrapper">
+        <div class="login-container">
+            <div class="glow-border"></div>
+            
+            <div class="login-form-section">
+                <div class="logo">
+                    <div class="logo-icon">🛡️</div>
+                    <div class="logo-text">
+                        <h1>钓鱼邮件智能分析系统</h1>
+                        <div class="logo-subtitle">Security Analysis System</div>
+                    </div>
+                </div>
+                
+                <div id="alert-area"></div>
+                
+                <form id="login-form">
+                    <div class="form-group">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-input" id="username" placeholder="请输入用户名" required>
+                        <span class="input-icon">👤</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-input" id="password" placeholder="请输入密码" required>
+                        <span class="input-icon">🔒</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">验证码</label>
+                        <div style="display:flex;gap:10px;">
+                            <input type="text" class="form-input" id="captcha" placeholder="请输入验证码" required style="flex:1;">
+                            <div id="captcha-container" style="width:120px;height:40px;border-radius:4px;cursor:pointer;background:#fff;display:flex;align-items:center;justify-content:center;" onclick="refreshCaptcha()">
+                                <span style="font-size:12px;color:#999;">加载中...</span>
+                            </div>
+                        </div>
+                        <span style="font-size:12px;color:var(--text-muted);cursor:pointer;" onclick="refreshCaptcha()">换一张</span>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="login-btn">
+                        <span>登 录</span>
+                    </button>
+                </form>
+                <div class="links">
+                    <a href="#" onclick="showForgotModal(); return false;">忘记密码？</a>
+                </div>
+                
+                <div class="security-badge">
+                    <span class="security-icon"></span>
+                    <span>安全加密连接</span>
+                </div>
+                
+                <div class="version-badge" id="version-display">
+                    V1.0
+                </div>
+            </div>
+            
+            <div class="login-feature-section">
+                <div class="feature-title">系统功能介绍</div>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <div class="feature-icon">📧</div>
+                        <div class="feature-content">
+                            <h3>邮件智能分析</h3>
+                            <p>基于AI技术深度分析邮件内容，精准识别钓鱼邮件特征，提供风险评估报告</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🔍</div>
+                        <div class="feature-content">
+                            <h3>威胁情报查询</h3>
+                            <p>集成多源威胁情报平台，实时查询IP、域名、URL的安全风险信息</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🤖</div>
+                        <div class="feature-content">
+                            <h3>AI智能问答</h3>
+                            <p>内置AI对话助手，支持安全知识咨询、代码分析、问题解答等功能</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📊</div>
+                        <div class="feature-content">
+                            <h3>数据分析统计</h3>
+                            <p>全面统计邮件分析数据，生成可视化报表，支持导出Word格式报告</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">⚡</div>
+                        <div class="feature-content">
+                            <h3>并发任务处理</h3>
+                            <p>基于Redis实现分布式任务队列，支持大规模邮件并发分析与自动回复</p>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🛡️</div>
+                        <div class="feature-content">
+                            <h3>系统健康监测</h3>
+                            <p>实时监测后端服务、数据库、Redis等组件状态，确保系统稳定运行</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="feature-footer">
+                    <p>筑牢网络防线，共享清朗空间</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="forgot-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">忘记密码</span>
+                <button class="modal-close" onclick="closeForgotModal()">&times;</button>
+            </div>
+            <div id="forgot-alert"></div>
+            <form id="forgot-form">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" class="form-input" id="forgot-username" placeholder="请输入用户名" required>
+                    <span class="input-icon">👤</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">验证码</label>
+                    <input type="text" class="form-input" id="forgot-code" placeholder="请输入验证码" required>
+                    <span class="input-icon">✉️</span>
+                    <button type="button" class="btn btn-secondary" style="margin-top:12px;width:auto;padding:10px 20px;font-size:14px;" onclick="sendCode()">发送验证码</button>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">新密码</label>
+                    <input type="password" class="form-input" id="forgot-new-password" placeholder="请输入新密码" required>
+                    <span class="input-icon">🔑</span>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeForgotModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">重置密码</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('particles');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        class Particle {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.vx = (Math.random() - 0.5) * 0.5;
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.size = Math.random() * 2 + 0.5;
+                this.opacity = Math.random() * 0.5 + 0.2;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0) this.x = canvas.width;
+                if (this.x > canvas.width) this.x = 0;
+                if (this.y < 0) this.y = canvas.height;
+                if (this.y > canvas.height) this.y = 0;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(0, 212, 255, ${this.opacity})`;
+                ctx.fill();
+            }
+        }
+        
+        for (let i = 0; i < 80; i++) {
+            particles.push(new Particle());
+        }
+        
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 150) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        async function loadVersion() {
+            try {
+                const resp = await fetch('/api/version');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    document.getElementById('version-display').textContent = data.version;
+                }
+            } catch (e) {
+                console.log('Failed to load version:', e);
+            }
+        }
+        loadVersion();
+
+        let resetToken = '';
+
+        async function apiRequest(url, options = {}) {
+            try {
+                const resp = await fetch(url, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || '请求失败');
+                return data;
+            } catch (e) {
+                throw e;
+            }
+        }
+
+        function showAlert(message, type = 'error', container = 'alert-area') {
+            const div = document.createElement('div');
+            div.className = `alert alert-${type}`;
+            div.textContent = message;
+            document.getElementById(container).innerHTML = '';
+            document.getElementById(container).appendChild(div);
+            setTimeout(() => div.remove(), 5000);
+        }
+
+        let captchaId = '';
+
+        async function refreshCaptcha() {
+            document.getElementById('captcha').value = '';
+            const container = document.getElementById('captcha-container');
+            container.innerHTML = '<span style="font-size:12px;color:#999;">加载中...</span>';
+            try {
+                const response = await fetch('/api/captcha');
+                const data = await response.json();
+                captchaId = data.captcha_id;
+                container.innerHTML = `<img src="${data.image}" alt="验证码" style="width:100%;height:100%;object-fit:cover;border-radius:4px;">`;
+            } catch (e) {
+                container.innerHTML = '<span style="font-size:10px;color:#999;">加载失败</span>';
+            }
+        }
+
+        refreshCaptcha();
+
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            btn.innerHTML = '<span class="loading"></span> 验证中...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value,
+                        captcha_id: captchaId,
+                        captcha: document.getElementById('captcha').value
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+                
+                const data = await response.json();
+                window.location.href = '/';
+            } catch (e) {
+                showAlert(e.message, 'error');
+                refreshCaptcha();
+            } finally {
+                btn.innerHTML = '<span>登 录</span>';
+                btn.disabled = false;
+            }
+        });
+
+        function showForgotModal() {
+            document.getElementById('forgot-form').reset();
+            document.getElementById('forgot-alert').innerHTML = '';
+            document.getElementById('forgot-modal').classList.add('active');
+        }
+        function closeForgotModal() { document.getElementById('forgot-modal').classList.remove('active'); }
+
+        async function sendCode() {
+            const username = document.getElementById('forgot-username').value;
+            if (!username) { showAlert('请输入用户名', 'error', 'forgot-alert'); return; }
+            try {
+                const data = await apiRequest('/api/forgot-password', {
+                    method: 'POST',
+                    body: JSON.stringify({ username })
+                });
+                resetToken = data.token;
+                showAlert('如果该账号已绑定邮箱，验证码已发送', 'success', 'forgot-alert');
+            } catch (e) {
+                showAlert(e.message, 'error', 'forgot-alert');
+            }
+        }
+
+        document.getElementById('forgot-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            try {
+                await apiRequest('/api/reset-password', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        code: document.getElementById('forgot-code').value,
+                        new_password: document.getElementById('forgot-new-password').value
+                    })
+                });
+                showAlert('密码重置成功，请重新登录', 'success', 'forgot-alert');
+                setTimeout(() => {
+                    closeForgotModal();
+                    document.getElementById('login-form').reset();
+                }, 1500);
+            } catch (e) {
+                showAlert(e.message, 'error', 'forgot-alert');
+            }
+        });
+    </script>
+</body>
+</html>
